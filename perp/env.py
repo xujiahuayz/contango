@@ -18,6 +18,7 @@ class DefiEnv:
         users: dict[str, User] | None = None,
         amm_pools: dict[str, AmmPool] | None = None,
         plf_pools: dict[str, PlfPool] | None = None,
+        c_pools: dict[str, cPool] | None = None,
     ):
         if users is None:
             users = {}
@@ -25,17 +26,22 @@ class DefiEnv:
             amm_pools = {}
         if plf_pools is None:
             plf_pools = {}
+        if c_pools is None:
+            c_pools = {}
 
         self.users = users
         self.amm_pools = amm_pools
         self.plf_pools = plf_pools
+        self.c_pools = c_pools
 
 
 class PlfPool:
-    def __init__(self, env: DefiEnv, asset_name: str):
+    def __init__(self, env: DefiEnv, asset_name: str, collateral_factor: float):
+        assert 0 <= collateral_factor <= 1, "collateral_factor must be between 0 and 1"
         self.env = env
         self.name = asset_name
         self.env.plf_pools[self.name] = self
+        self.collateral_factor = collateral_factor
 
     @property
     def lending_apy(self) -> float:
@@ -44,6 +50,13 @@ class PlfPool:
     @property
     def borrowing_aoy(self) -> float:
         return 0.0
+
+
+class cPool:
+    def __init__(self, env: DefiEnv, asset_name: str):
+        self.env = env
+        self.name = asset_name
+        self.env.c_pools[self.name] = self
 
 
 class AmmPool:
@@ -157,13 +170,44 @@ class User:
         self.env.users[self.name] = self
 
     def wealth(self, denominator: str) -> float:
-        oracle_pool = self.env.amm_pools[denominator]
+        # TODO: this is not accurate - need to come up with a better price oracle
         return sum(
             [
-                oracle_pool.spot_price(k, denominator) * v
+                self.env.amm_pools["".join(sorted([k, denominator]))].spot_price(
+                    k, denominator
+                )
+                * v
                 for k, v in self.funds_available.items()
             ]
         )
+
+    def open_contango(
+        self,
+        init_asset: str,
+        target_asset: str,
+        target_quantity: float,
+    ):
+        """
+        Open a contango position.
+        """
+        if init_asset not in self.funds_available.keys():
+            raise Exception("init_asset not in funds_available")
+        if target_quantity <= 0:
+            raise Exception("target_quantity must be greater than zero")
+
+        amm_pool = self.env.amm_pools["".join(sorted([init_asset, target_asset]))]
+        plf_pool_init = self.env.plf_pools[init_asset]
+
+        swap_in_quantity = amm_pool._swap_out(
+            asset_out=target_asset, quantity_out=target_quantity, asset_in=init_asset
+        )
+
+        init_quantity = swap_in_quantity * (1 - plf_pool_init.collateral_factor)
+
+        if self.funds_available[init_asset] < init_quantity:
+            raise Exception("insufficient funds")
+        self.funds_available[init_asset] -= init_quantity
+        # TODO: to continue here
 
 
 if __name__ == "__main__":
