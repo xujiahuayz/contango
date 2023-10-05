@@ -4,15 +4,14 @@ Environment for the DeFi simulation.
 
 
 from __future__ import annotations
+
 import logging
 
-import numpy as np
-
 from perp.constants import (
+    AAVE_TOKEN_PREFIX,
+    CONTANGO_TOKEN_PREFIX,
     DEBT_TOKEN_PREFIX,
     INTEREST_TOKEN_PREFIX,
-    CONTANGO_TOKEN_PREFIX,
-    AAVE_TOKEN_PREFIX,
 )
 from perp.utils import PriceDict
 
@@ -26,14 +25,12 @@ class DefiEnv:
         self,
         users: dict[str, User] | None = None,
         prices: PriceDict | None = None,
-        amm_pools: dict[str, AmmPool] | None = None,
         plf_pools: dict[str, PlfPool] | None = None,
         c_pools: dict[str, cPool] | None = None,
     ):
         if users is None:
             users = {}
-        if amm_pools is None:
-            amm_pools = {}
+
         if plf_pools is None:
             plf_pools = {}
         if c_pools is None:
@@ -42,8 +39,8 @@ class DefiEnv:
         if prices is None:
             prices = PriceDict({"dai": 1.0})
 
+        self.prices = prices
         self.users = users
-        self.amm_pools = amm_pools
         self.plf_pools = plf_pools
         self.c_pools = c_pools
         self.timestamp: float = 0
@@ -192,105 +189,6 @@ class cPool:
         return self.env.plf_pools[self.asset_name].borrowing_apy
 
 
-class AmmPool:
-    def __init__(self, env: DefiEnv, pool: dict[str, list[float]], fee: float = 0.0):
-        # pool: {"asset": [qty, weight]}
-        # assert the weights sum to 1
-        if np.abs(sum([w[1] for w in pool.values()]) - 1) > 1e-6:
-            raise Exception("asset weights do not sum to 1.0")
-        self.env = env
-        self.pool = pool
-        self.fee = fee
-        # concatenate the names of the assets in the pool alphabetically
-        self.name = "".join(sorted([k for k in self.pool.keys()]))
-        self.env.amm_pools[self.name] = self
-
-    @property
-    def invariant(self) -> float:
-        """
-        Compute the invariant by multiplying the pool's reserves raised to their respective weights.
-        """
-        C = 1
-        for _, w in self.pool.items():
-            C *= w[0] ** w[1]
-        return C
-
-    def _swap_in(self, asset_in: str, quantity_in: float, asset_out: str) -> float:
-        """
-        Swap `quantity_in` of `asset_in` for `asset_out` theoretically without updating the states
-        """
-        if asset_in not in self.pool.keys():
-            raise Exception("asset_in not in pool")
-        if asset_out not in self.pool.keys():
-            raise Exception("asset_out not in pool")
-        if quantity_in <= 0:
-            raise Exception("quantity must be greater than zero")
-
-        new_in_quantity = self.pool[asset_in][0] + quantity_in
-        theoretical_new_out_quantity = (
-            self.invariant / new_in_quantity ** self.pool[asset_in][1]
-        ) ** (1 / self.pool[asset_out][1])
-        quantity_out = (self.pool[asset_out][0] - theoretical_new_out_quantity) * (
-            1 - self.fee
-        )
-        return quantity_out
-
-    def _swap_out(self, asset_out: str, quantity_out: float, asset_in: str) -> float:
-        """
-        Swap `quantity_out` of `asset_out` for `asset_in` theoretically without updating the states
-        """
-        if asset_in not in self.pool.keys():
-            raise Exception("asset_in not in pool")
-        if asset_out not in self.pool.keys():
-            raise Exception("asset_out not in pool")
-        if quantity_out <= 0:
-            raise Exception("quantity must be greater than zero")
-
-        theoretical_new_out_quantity = self.pool[asset_out][0] - quantity_out / (
-            1 - self.fee
-        )
-        new_in_quantity = (
-            self.invariant / theoretical_new_out_quantity ** self.pool[asset_out][1]
-        ) ** (1 / self.pool[asset_in][1])
-        return new_in_quantity - self.pool[asset_in][0]
-
-    def swap_in(self, asset_in: str, quantity_in: float, asset_out: str):
-        """
-        Swap `quantity_in` of `asset_in` for `asset_out` and update the states
-        """
-        quantity_out = self._swap_in(asset_in, quantity_in, asset_out)
-        self.pool[asset_in][0] += quantity_in
-        self.pool[asset_out][0] -= quantity_out
-
-    def swap_out(self, asset_out: str, quantity_out: float, asset_in: str):
-        """
-        Swap out `quantity_out` of `asset_out` with `asset_in` and update the states
-        """
-        quantity_in = self._swap_out(asset_out, quantity_out, asset_in)
-        self.pool[asset_in][0] += quantity_in
-        self.pool[asset_out][0] -= quantity_out
-
-    def update_balanced_liquidity(self, asset: str, quantity_change: float):
-        old_quantity = self.pool[asset][0]
-        self.pool[asset][0] += quantity_change
-        multiplier = self.pool[asset][0] / old_quantity
-        for k, _ in self.pool.items():
-            if k != asset:
-                self.pool[k][0] *= multiplier
-
-    def spot_price(self, asset: str, denominator: str) -> float:
-        """
-        Compute the spot price of `asset` in terms of `denominator`.
-        """
-        if asset not in self.pool.keys():
-            raise Exception("asset not in pool")
-        if denominator not in self.pool.keys():
-            raise Exception("denominator not in pool")
-        return (self.pool[denominator][0] / self.pool[denominator][1]) / (
-            self.pool[asset][0] / self.pool[asset][1]
-        )
-
-
 class User:
     def __init__(
         self, env: DefiEnv, name: str, funds_available: dict[str, float] | None = None
@@ -312,84 +210,6 @@ class User:
 
         return user_wealth
 
-    @property
-    def existing_borrow_value(self) -> float:
-        return sum(
-            self.funds_available[plf.borrow_token_name]
-            * self.env.prices[plf.asset_name]
-            for plf in self.env.plf_pools.values()
-        )
-
-    @property
-    def existing_supply_value(self) -> float:
-        return sum(
-            self.funds_available[plf.interest_token_name] * self.env.prices[name]
-            for name, plf in self.env.plf_pools.items()
-        )
-
-    @property
-    def max_borrowable_value(self) -> float:
-        return sum(
-            self.funds_available[plf.interest_token_name]
-            * self.env.prices[plf.asset_name]
-            * plf.collateral_factor
-            for plf in self.env.plf_pools.values()
-        )
-
-    def _borrow_repay(self, amount: float, plf: PlfPool) -> float:
-        # set default values for user_b_tokens and funds_available if they don't exist
-
-        plf.user_b_tokens.setdefault(self.name, 0)
-        self.funds_available.setdefault(plf.borrow_token_name, 0)
-        self.funds_available.setdefault(plf.asset_name, 0)
-        self.funds_available.setdefault(plf.interest_token_name, 0)
-
-        if amount >= 0:
-            # borrow case
-            # will never borrow EVERYTHING - always leave some safety margin
-            additional_borrowable_amount = (
-                self.max_borrowable_value - self.existing_borrow_value
-            ) / self.env.prices[plf.asset_name]
-            amount = max(
-                min(
-                    amount,
-                    plf.total_available_funds,
-                    additional_borrowable_amount,
-                ),
-                0,
-            )
-            if 0 <= amount < 1e-9:  # if amount is too small,
-                return 0
-        else:
-            # repay case
-            amount = max(
-                amount,
-                -plf.user_b_tokens[self.name],
-                -self.funds_available[plf.asset_name],
-            )
-
-        logging.debug(
-            f"borrowing {amount} {plf.borrow_token_name}"
-            if amount > 0
-            else f"repaying {-amount} {plf.borrow_token_name}"
-        )
-        # update liquidity pool
-        plf.total_available_funds -= amount
-
-        # update b tokens of the user in the pool registry
-        plf.user_b_tokens[self.name] += amount
-
-        # matching balance in user's account to pool registry record
-        self.funds_available[plf.borrow_token_name] = plf.user_b_tokens[self.name]
-
-        self.funds_available[plf.asset_name] += amount
-
-        assert plf.total_available_funds >= 0, (
-            "total available funds cannot be negative at \n %s" % plf
-        )
-
-        return amount
-
     def open_contango(
         self,
         init_asset: str,
@@ -410,6 +230,10 @@ class User:
         plf_pool_target = self.env.plf_pools[target_asset]
         c_pool_init = self.env.c_pools[init_asset]
         c_pool_target = self.env.c_pools[target_asset]
+
+        plf_pool_target.user_i_tokens.setdefault(self.name, 0)
+        plf_pool_init.user_b_tokens.setdefault(self.name, 0)
+        self.funds_available.setdefault(plf_pool_target.borrow_token_name, 0)
 
         init_quantity = (
             self.env.prices[target_asset]
@@ -463,4 +287,38 @@ class User:
 
 
 if __name__ == "__main__":
-    pass
+    logging.basicConfig(level=logging.DEBUG)
+    env = DefiEnv(
+        prices=PriceDict({"dai": 1.0, "eth": 1000.0}),
+    )
+    market_user = User(
+        env=env,
+        name="MarketUser",
+        funds_available={"dai": 999_999_999_999, "eth": 999_999_999_999},
+    )
+    charlie = User(env=env, name="Charlie", funds_available={"dai": 1_000_000})
+    plf_eth = PlfPool(
+        env=env,
+        initiator=market_user,
+        initial_starting_funds=1_000_000,
+        initial_borrowing_funds=0,
+        asset_name="eth",
+        collateral_factor=0.75,
+    )
+    plf_dai = PlfPool(
+        env=env,
+        initiator=market_user,
+        initial_starting_funds=1_000_000,
+        initial_borrowing_funds=0,
+        asset_name="dai",
+        collateral_factor=0.75,
+    )
+    c_eth = cPool(env=env, asset_name="eth", funds_available=1_000_000, c_ratio=0.2)
+    c_dai = cPool(env=env, asset_name="dai", funds_available=1_000_000, c_ratio=0.2)
+
+    charlie.open_contango(
+        init_asset="dai",
+        target_asset="eth",
+        target_quantity=100_000,
+        target_collateral_factor=0.85,
+    )
