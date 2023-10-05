@@ -4,8 +4,17 @@ Environment for the DeFi simulation.
 
 
 from __future__ import annotations
+import logging
 
 import numpy as np
+
+from perp.constants import (
+    DEBT_TOKEN_PREFIX,
+    INTEREST_TOKEN_PREFIX,
+    CONTANGO_TOKEN_PREFIX,
+    AAVE_TOKEN_PREFIX,
+)
+from perp.utils import PriceDict
 
 
 class DefiEnv:
@@ -16,6 +25,7 @@ class DefiEnv:
     def __init__(
         self,
         users: dict[str, User] | None = None,
+        prices: PriceDict | None = None,
         amm_pools: dict[str, AmmPool] | None = None,
         plf_pools: dict[str, PlfPool] | None = None,
         c_pools: dict[str, cPool] | None = None,
@@ -29,34 +39,157 @@ class DefiEnv:
         if c_pools is None:
             c_pools = {}
 
+        if prices is None:
+            prices = PriceDict({"dai": 1.0})
+
         self.users = users
         self.amm_pools = amm_pools
         self.plf_pools = plf_pools
         self.c_pools = c_pools
+        self.timestamp: float = 0
+
+    @property
+    def prices(self) -> PriceDict:
+        return self._prices
+
+    @prices.setter
+    def prices(self, value: PriceDict):
+        if not isinstance(value, PriceDict):
+            raise TypeError("must use PriceDict type")
+        self._prices = value
 
 
 class PlfPool:
-    def __init__(self, env: DefiEnv, asset_name: str, collateral_factor: float):
+    """
+    Reference pool (e.g. Aave) for interest rates
+    """
+
+    def __init__(
+        self,
+        env: DefiEnv,
+        initiator: User,
+        initial_starting_funds: float,
+        initial_borrowing_funds: float,
+        asset_name: str,
+        collateral_factor: float,
+        flashloan_fee: float = 0.0,
+    ):
         assert 0 <= collateral_factor <= 1, "collateral_factor must be between 0 and 1"
+        assert (
+            initial_borrowing_funds < initial_starting_funds * collateral_factor
+        ), "initial_borrowing_funds must be less than initial_starting_funds * collateral_factor"
+
         self.env = env
-        self.name = asset_name
-        self.env.plf_pools[self.name] = self
+        self.initiator = initiator
+        self.asset_name = asset_name
+        self.env.plf_pools[self.asset_name] = self
         self.collateral_factor = collateral_factor
+        self.flashloan_fee = flashloan_fee
+
+        self.interest_token_name = (
+            INTEREST_TOKEN_PREFIX + AAVE_TOKEN_PREFIX + self.asset_name
+        )
+        self.borrow_token_name = DEBT_TOKEN_PREFIX + AAVE_TOKEN_PREFIX + self.asset_name
+
+        self.initiator.funds_available[self.asset_name] += (
+            initial_borrowing_funds - initial_starting_funds
+        )
+
+        # actual underlying that's still available, not the interest-bearing tokens
+        self.total_available_funds = initial_starting_funds - initial_borrowing_funds
+
+        # add interest-bearing token into initiator's wallet
+        self.initiator.funds_available[
+            self.interest_token_name
+        ] = initial_starting_funds
+        self.initiator.funds_available[self.borrow_token_name] = initial_borrowing_funds
+
+        self.user_i_tokens: dict[str, float] = {
+            self.initiator.name: initial_starting_funds
+        }
+        self.user_b_tokens: dict[str, float] = {
+            self.initiator.name: initial_borrowing_funds
+        }
 
     @property
     def lending_apy(self) -> float:
         return 0.0
 
     @property
-    def borrowing_aoy(self) -> float:
+    def borrowing_apy(self) -> float:
         return 0.0
+
+    @property
+    def utilization_ratio(self) -> float:
+        if self.total_i_tokens == 0:
+            return 0
+        util_rate = self.total_b_tokens / self.total_i_tokens
+        # TODO: understand utilization ratio
+        return max(0, min(util_rate, 0.97))
+
+    @property
+    def total_i_tokens(self) -> float:
+        return sum(self.user_i_tokens.values())
+
+    @property
+    def total_b_tokens(self) -> float:
+        return sum(self.user_b_tokens.values())
+
+    @property
+    def reserve(self) -> float:
+        return self.total_b_tokens + self.total_available_funds - self.total_i_tokens
 
 
 class cPool:
-    def __init__(self, env: DefiEnv, asset_name: str):
+    def __init__(
+        self,
+        env: DefiEnv,
+        asset_name: str,
+        funds_available: float = 0.0,
+        c_ratio: float = 0.2,
+        fee: float = 0.0,
+    ):
         self.env = env
-        self.name = asset_name
-        self.env.c_pools[self.name] = self
+        self.asset_name = asset_name
+        self.env.c_pools[self.asset_name] = self
+        self.funds_available = funds_available
+        self.user_i_tokens: dict[str, float] = {}
+        self.user_b_tokens: dict[str, float] = {}
+        self.c_ratio = c_ratio
+        self.fee = fee
+
+        self.interest_token_name = (
+            INTEREST_TOKEN_PREFIX + CONTANGO_TOKEN_PREFIX + self.asset_name
+        )
+        self.borrow_token_name = (
+            DEBT_TOKEN_PREFIX + CONTANGO_TOKEN_PREFIX + self.asset_name
+        )
+
+    @property
+    def total_i_tokens(self) -> float:
+        return sum(self.user_i_tokens.values())
+
+    @property
+    def total_b_tokens(self) -> float:
+        return sum(self.user_b_tokens.values())
+
+    @property
+    def reserve(self) -> float:
+        return self.total_b_tokens + self.funds_available - self.total_i_tokens
+
+    @property
+    def lending_apy(self) -> float:
+        """
+        use the reference pool for lending apy
+        """
+        return self.env.plf_pools[self.asset_name].lending_apy
+
+    @property
+    def borrowing_apy(self) -> float:
+        """
+        use the reference pool for borrowing apy
+        """
+        return self.env.plf_pools[self.asset_name].borrowing_apy
 
 
 class AmmPool:
@@ -169,23 +302,101 @@ class User:
         self.name = name
         self.env.users[self.name] = self
 
-    def wealth(self, denominator: str) -> float:
-        # TODO: this is not accurate - need to come up with a better price oracle
-        return sum(
-            [
-                self.env.amm_pools["".join(sorted([k, denominator]))].spot_price(
-                    k, denominator
-                )
-                * v
-                for k, v in self.funds_available.items()
-            ]
+    @property
+    def wealth(self) -> float:
+        user_wealth = sum(
+            value * self.env.prices[asset_name]
+            for asset_name, value in self.funds_available.items()
         )
+        logging.debug(f"{self.name}'s wealth in USD: {user_wealth}")
+
+        return user_wealth
+
+    @property
+    def existing_borrow_value(self) -> float:
+        return sum(
+            self.funds_available[plf.borrow_token_name]
+            * self.env.prices[plf.asset_name]
+            for plf in self.env.plf_pools.values()
+        )
+
+    @property
+    def existing_supply_value(self) -> float:
+        return sum(
+            self.funds_available[plf.interest_token_name] * self.env.prices[name]
+            for name, plf in self.env.plf_pools.items()
+        )
+
+    @property
+    def max_borrowable_value(self) -> float:
+        return sum(
+            self.funds_available[plf.interest_token_name]
+            * self.env.prices[plf.asset_name]
+            * plf.collateral_factor
+            for plf in self.env.plf_pools.values()
+        )
+
+    def _borrow_repay(self, amount: float, plf: PlfPool) -> float:
+        # set default values for user_b_tokens and funds_available if they don't exist
+
+        plf.user_b_tokens.setdefault(self.name, 0)
+        self.funds_available.setdefault(plf.borrow_token_name, 0)
+        self.funds_available.setdefault(plf.asset_name, 0)
+        self.funds_available.setdefault(plf.interest_token_name, 0)
+
+        if amount >= 0:
+            # borrow case
+            # will never borrow EVERYTHING - always leave some safety margin
+            additional_borrowable_amount = (
+                self.max_borrowable_value - self.existing_borrow_value
+            ) / self.env.prices[plf.asset_name]
+            amount = max(
+                min(
+                    amount,
+                    plf.total_available_funds,
+                    additional_borrowable_amount,
+                ),
+                0,
+            )
+            if 0 <= amount < 1e-9:  # if amount is too small,
+                return 0
+        else:
+            # repay case
+            amount = max(
+                amount,
+                -plf.user_b_tokens[self.name],
+                -self.funds_available[plf.asset_name],
+            )
+
+        logging.debug(
+            f"borrowing {amount} {plf.borrow_token_name}"
+            if amount > 0
+            else f"repaying {-amount} {plf.borrow_token_name}"
+        )
+        # update liquidity pool
+        plf.total_available_funds -= amount
+
+        # update b tokens of the user in the pool registry
+        plf.user_b_tokens[self.name] += amount
+
+        # matching balance in user's account to pool registry record
+        self.funds_available[plf.borrow_token_name] = plf.user_b_tokens[self.name]
+
+        self.funds_available[plf.asset_name] += amount
+
+        assert plf.total_available_funds >= 0, (
+            "total available funds cannot be negative at \n %s" % plf
+        )
+
+        return amount
 
     def open_contango(
         self,
         init_asset: str,
         target_asset: str,
         target_quantity: float,
+        target_collateral_factor: float,
+        trading_slippage: float = 0.0,  # hard code slippage for now without using AMM
     ):
         """
         Open a contango position.
@@ -195,19 +406,60 @@ class User:
         if target_quantity <= 0:
             raise Exception("target_quantity must be greater than zero")
 
-        amm_pool = self.env.amm_pools["".join(sorted([init_asset, target_asset]))]
         plf_pool_init = self.env.plf_pools[init_asset]
+        plf_pool_target = self.env.plf_pools[target_asset]
+        c_pool_init = self.env.c_pools[init_asset]
+        c_pool_target = self.env.c_pools[target_asset]
 
-        swap_in_quantity = amm_pool._swap_out(
-            asset_out=target_asset, quantity_out=target_quantity, asset_in=init_asset
+        init_quantity = (
+            self.env.prices[target_asset]
+            * target_quantity
+            / self.env.prices[init_asset]
         )
 
-        init_quantity = swap_in_quantity * (1 - plf_pool_init.collateral_factor)
+        # Begin with $(1-\theta^0)P_0$ DAI, take the amount out of user's wallet
+        self.funds_available[init_asset] -= (
+            1 - target_collateral_factor
+        ) * init_quantity
 
-        if self.funds_available[init_asset] < init_quantity:
-            raise Exception("insufficient funds")
-        self.funds_available[init_asset] -= init_quantity
-        # TODO: to continue here
+        # Borrow Cθ 0P0 DAI from Contango, take the amount out of contango pool
+        c_pool_init.funds_available -= (
+            c_pool_init.c_ratio * target_collateral_factor * init_quantity
+        )
+
+        # Get (1 −C)θ 0P0 DAI using flashloan (to be paid back within one block)
+        flashloan_amount = (
+            (1 - c_pool_init.c_ratio) * target_collateral_factor * init_quantity
+        )
+
+        plf_pool_init.total_available_funds -= flashloan_amount
+
+        # Put together $(1-\theta^0)P_0$, $C\theta^0P_0$ , and $(1 - C)\theta^{0}P_0$ to swap in total $P_0$ DAI for $(1-\epsilon)$ ETH, where $\epsilon$ is the effect of price movement and slippage (can be positive or negative)
+        # Deposit swapped $(1-\epsilon)(1-f^C)$ ETH as collateral on Aave and start earning interest according to $(1-\epsilon)(1-f^C)e^{r^c t}$
+
+        deposit_amount = (
+            (1 - trading_slippage) * (1 - c_pool_target.fee) * target_quantity
+        )
+
+        plf_pool_target.total_available_funds += deposit_amount
+        plf_pool_target.user_i_tokens[self.name] += deposit_amount
+        self.funds_available[plf_pool_target.borrow_token_name] += deposit_amount
+
+        # Borrow $(1 - C)\theta^{0}(1+f^F)P_0$ DAI against the collateral on Aave
+        borrow_amount = flashloan_amount * (1 + plf_pool_init.flashloan_fee)
+
+        # update liquidity pool
+        plf_pool_init.total_available_funds -= borrow_amount
+        # update b tokens of the user in the pool registry
+        plf_pool_init.user_b_tokens[self.name] += borrow_amount
+
+        # matching balance in user's account to pool registry record
+        self.funds_available[
+            plf_pool_init.borrow_token_name
+        ] = plf_pool_init.user_b_tokens[self.name]
+
+        # repay flashloan
+        plf_pool_init.total_available_funds += borrow_amount
 
 
 if __name__ == "__main__":
