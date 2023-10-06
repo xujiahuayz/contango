@@ -55,6 +55,12 @@ class DefiEnv:
             raise TypeError("must use PriceDict type")
         self._prices = value
 
+    def accrue_interest(self) -> None:
+        for pool in self.plf_pools.values():
+            pool.accrue_daily_interest()
+        for pool in self.c_pools.values():
+            pool.accrue_daily_interest()
+
 
 class PlfPool:
     """
@@ -69,6 +75,7 @@ class PlfPool:
         initial_borrowing_funds: float,
         asset_name: str,
         collateral_factor: float,
+        liquidation_threshold: float,
         flashloan_fee: float = 0.0,
     ):
         assert 0 <= collateral_factor <= 1, "collateral_factor must be between 0 and 1"
@@ -81,6 +88,7 @@ class PlfPool:
         self.asset_name = asset_name
         self.env.plf_pools[self.asset_name] = self
         self.collateral_factor = collateral_factor
+        self.liquidation_threshold = liquidation_threshold
         self.flashloan_fee = flashloan_fee
 
         self.interest_token_name = (
@@ -108,21 +116,9 @@ class PlfPool:
             self.initiator.name: initial_borrowing_funds
         }
 
-    @property
-    def lending_apy(self) -> float:
-        return 0.0
-
-    @property
-    def borrowing_apy(self) -> float:
-        return 0.0
-
-    @property
-    def utilization_ratio(self) -> float:
-        if self.total_i_tokens == 0:
-            return 0
-        util_rate = self.total_b_tokens / self.total_i_tokens
-        # TODO: understand utilization ratio
-        return max(0, min(util_rate, 0.97))
+        # initiate interest rates as 0
+        self.supply_apy: float = 0.0
+        self.borrow_apy: float = 0.0
 
     @property
     def total_i_tokens(self) -> float:
@@ -133,8 +129,36 @@ class PlfPool:
         return sum(self.user_b_tokens.values())
 
     @property
-    def reserve(self) -> float:
-        return self.total_b_tokens + self.total_available_funds - self.total_i_tokens
+    def daily_supplier_multiplier(self) -> float:
+        return (1 + self.supply_apy) ** (1 / 365)
+
+    @property
+    def daily_borrow_multiplier(self) -> float:
+        return (1 + self.borrow_apy) ** (1 / 365)
+
+    def accrue_daily_interest(self):
+        """
+        accrue interest to all users in the pool
+        record profit
+        """
+
+        for user_name in self.user_i_tokens:
+            user_funds = self.env.users[user_name].funds_available
+
+            # distribute i-token
+            user_funds[self.interest_token_name] *= self.daily_supplier_multiplier
+
+            # update i token register
+            self.user_i_tokens[user_name] = user_funds[self.interest_token_name]
+
+        for user_name in self.user_b_tokens:
+            user_funds = self.env.users[user_name].funds_available
+
+            # distribute b-token
+            user_funds[self.borrow_token_name] *= self.daily_borrow_multiplier
+
+            # update b token register
+            self.user_b_tokens[user_name] = user_funds[self.borrow_token_name]
 
 
 class cPool:
@@ -179,18 +203,50 @@ class cPool:
         return self.total_b_tokens + self.funds_available - self.total_i_tokens
 
     @property
-    def lending_apy(self) -> float:
+    def supply_apy(self) -> float:
         """
         use the reference pool for lending apy
         """
-        return self.env.plf_pools[self.asset_name].lending_apy
+        return self.env.plf_pools[self.asset_name].supply_apy
 
     @property
-    def borrowing_apy(self) -> float:
+    def borrow_apy(self) -> float:
         """
         use the reference pool for borrowing apy
         """
-        return self.env.plf_pools[self.asset_name].borrowing_apy
+        return self.env.plf_pools[self.asset_name].borrow_apy
+
+    @property
+    def daily_supplier_multiplier(self) -> float:
+        return (1 + self.supply_apy) ** (1 / 365)
+
+    @property
+    def daily_borrow_multiplier(self) -> float:
+        return (1 + self.borrow_apy) ** (1 / 365)
+
+    def accrue_daily_interest(self):
+        """
+        accrue interest to all users in the pool
+        record profit
+        """
+
+        for user_name in self.user_i_tokens:
+            user_funds = self.env.users[user_name].funds_available
+
+            # distribute i-token
+            user_funds[self.interest_token_name] *= self.daily_supplier_multiplier
+
+            # update i token register
+            self.user_i_tokens[user_name] = user_funds[self.interest_token_name]
+
+        for user_name in self.user_b_tokens:
+            user_funds = self.env.users[user_name].funds_available
+
+            # distribute b-token
+            user_funds[self.borrow_token_name] *= self.daily_borrow_multiplier
+
+            # update b token register
+            self.user_b_tokens[user_name] = user_funds[self.borrow_token_name]
 
 
 class User:
@@ -295,6 +351,26 @@ class User:
         # repay flashloan
         plf_pool_init.total_available_funds += borrow_amount_aave
 
+    @property
+    def plf_health(self) -> float:
+        """
+        Calculate the health factor of a user in a plf pool.
+        """
+        discounted_deposit = 0
+        total_borrow = 0
+        for pool in self.env.plf_pools.values():
+            if self.name in pool.user_i_tokens:
+                discounted_deposit += (
+                    pool.user_i_tokens[self.name]
+                    * self.env.prices[pool.asset_name]
+                    * pool.liquidation_threshold
+                )
+            if self.name in pool.user_b_tokens:
+                total_borrow += (
+                    pool.user_b_tokens[self.name] * self.env.prices[pool.asset_name]
+                )
+        return discounted_deposit / total_borrow
+
 
 if __name__ == "__main__":
     logging.basicConfig(level=logging.DEBUG)
@@ -314,6 +390,7 @@ if __name__ == "__main__":
         initial_borrowing_funds=0,
         asset_name="eth",
         collateral_factor=0.7,
+        liquidation_threshold=0.8,
         flashloan_fee=0,
     )
     plf_dai = PlfPool(
@@ -323,6 +400,7 @@ if __name__ == "__main__":
         initial_borrowing_funds=0,
         asset_name="dai",
         collateral_factor=0.7,
+        liquidation_threshold=0.8,
         flashloan_fee=0,
     )
     c_eth = cPool(env=env, asset_name="eth", funds_available=1_000_000, c_ratio=0.2)
@@ -340,3 +418,18 @@ if __name__ == "__main__":
     print(plf_eth.user_i_tokens)
     print(plf_dai.user_b_tokens)
     print(c_dai.user_b_tokens)
+    print(charlie.plf_health)
+
+    plf_eth.supply_apy = 0.1
+    plf_eth.borrow_apy = 0.2
+    plf_dai.supply_apy = 0.1
+    plf_dai.borrow_apy = 0.2
+
+    env.accrue_interest()
+
+    print(charlie.funds_available)
+    print(plf_eth.total_available_funds)
+    print(plf_eth.user_i_tokens)
+    print(plf_dai.user_b_tokens)
+    print(c_dai.user_b_tokens)
+    print(charlie.plf_health)
