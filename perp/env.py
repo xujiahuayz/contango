@@ -138,6 +138,10 @@ class PlfPool:
 
 
 class cPool:
+    """
+    methods for c pool
+    """
+
     def __init__(
         self,
         env: DefiEnv,
@@ -233,7 +237,10 @@ class User:
 
         plf_pool_target.user_i_tokens.setdefault(self.name, 0)
         plf_pool_init.user_b_tokens.setdefault(self.name, 0)
-        self.funds_available.setdefault(plf_pool_target.borrow_token_name, 0)
+        c_pool_init.user_b_tokens.setdefault(self.name, 0)
+        self.funds_available.setdefault(plf_pool_target.interest_token_name, 0)
+        self.funds_available.setdefault(plf_pool_init.borrow_token_name, 0)
+        self.funds_available.setdefault(c_pool_init.borrow_token_name, 0)
 
         init_quantity = (
             self.env.prices[target_asset]
@@ -247,9 +254,13 @@ class User:
         ) * init_quantity
 
         # Borrow Cθ 0P0 DAI from Contango, take the amount out of contango pool
-        c_pool_init.funds_available -= (
+        borrow_amount_contango = (
             c_pool_init.c_ratio * target_collateral_factor * init_quantity
         )
+
+        c_pool_init.funds_available -= borrow_amount_contango
+        c_pool_init.user_b_tokens[self.name] += borrow_amount_contango
+        self.funds_available[c_pool_init.borrow_token_name] += borrow_amount_contango
 
         # Get (1 −C)θ 0P0 DAI using flashloan (to be paid back within one block)
         flashloan_amount = (
@@ -260,22 +271,21 @@ class User:
 
         # Put together $(1-\theta^0)P_0$, $C\theta^0P_0$ , and $(1 - C)\theta^{0}P_0$ to swap in total $P_0$ DAI for $(1-\epsilon)$ ETH, where $\epsilon$ is the effect of price movement and slippage (can be positive or negative)
         # Deposit swapped $(1-\epsilon)(1-f^C)$ ETH as collateral on Aave and start earning interest according to $(1-\epsilon)(1-f^C)e^{r^c t}$
-
         deposit_amount = (
             (1 - trading_slippage) * (1 - c_pool_target.fee) * target_quantity
         )
 
         plf_pool_target.total_available_funds += deposit_amount
         plf_pool_target.user_i_tokens[self.name] += deposit_amount
-        self.funds_available[plf_pool_target.borrow_token_name] += deposit_amount
+        self.funds_available[plf_pool_target.interest_token_name] += deposit_amount
 
         # Borrow $(1 - C)\theta^{0}(1+f^F)P_0$ DAI against the collateral on Aave
-        borrow_amount = flashloan_amount * (1 + plf_pool_init.flashloan_fee)
+        borrow_amount_aave = flashloan_amount * (1 + plf_pool_init.flashloan_fee)
 
         # update liquidity pool
-        plf_pool_init.total_available_funds -= borrow_amount
+        plf_pool_init.total_available_funds -= borrow_amount_aave
         # update b tokens of the user in the pool registry
-        plf_pool_init.user_b_tokens[self.name] += borrow_amount
+        plf_pool_init.user_b_tokens[self.name] += borrow_amount_aave
 
         # matching balance in user's account to pool registry record
         self.funds_available[
@@ -283,7 +293,7 @@ class User:
         ] = plf_pool_init.user_b_tokens[self.name]
 
         # repay flashloan
-        plf_pool_init.total_available_funds += borrow_amount
+        plf_pool_init.total_available_funds += borrow_amount_aave
 
 
 if __name__ == "__main__":
@@ -303,7 +313,8 @@ if __name__ == "__main__":
         initial_starting_funds=1_000_000,
         initial_borrowing_funds=0,
         asset_name="eth",
-        collateral_factor=0.75,
+        collateral_factor=0.7,
+        flashloan_fee=0,
     )
     plf_dai = PlfPool(
         env=env,
@@ -311,7 +322,8 @@ if __name__ == "__main__":
         initial_starting_funds=1_000_000,
         initial_borrowing_funds=0,
         asset_name="dai",
-        collateral_factor=0.75,
+        collateral_factor=0.7,
+        flashloan_fee=0,
     )
     c_eth = cPool(env=env, asset_name="eth", funds_available=1_000_000, c_ratio=0.2)
     c_dai = cPool(env=env, asset_name="dai", funds_available=1_000_000, c_ratio=0.2)
@@ -319,6 +331,12 @@ if __name__ == "__main__":
     charlie.open_contango(
         init_asset="dai",
         target_asset="eth",
-        target_quantity=100_000,
-        target_collateral_factor=0.85,
+        target_quantity=3,
+        target_collateral_factor=0.8,
+        trading_slippage=0,
     )
+    print(charlie.funds_available)
+    print(plf_eth.total_available_funds)
+    print(plf_eth.user_i_tokens)
+    print(plf_dai.user_b_tokens)
+    print(c_dai.user_b_tokens)
