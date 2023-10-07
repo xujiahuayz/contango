@@ -2,7 +2,6 @@
 Environment for the DeFi simulation.
 """
 
-
 from __future__ import annotations
 
 import logging

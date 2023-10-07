@@ -1,6 +1,7 @@
+from matplotlib import pyplot as plt
+
 from perp.env import DefiEnv, PlfPool, User, cPool
 from perp.utils import PriceDict
-
 
 env = DefiEnv(
     prices=PriceDict({"dai": 1.0, "eth": 1000.0}),
@@ -10,7 +11,9 @@ market_user = User(
     name="MarketUser",
     funds_available={"dai": 999_999_999_999, "eth": 999_999_999_999},
 )
-charlie = User(env=env, name="Charlie", funds_available={"dai": 1_000_000})
+
+INITIAL_FUNDS = 1_000_000
+charlie = User(env=env, name="Charlie", funds_available={"dai": INITIAL_FUNDS})
 plf_eth = PlfPool(
     env=env,
     initiator=market_user,
@@ -42,6 +45,7 @@ charlie.open_contango(
     trading_slippage=0,
 )
 
+# pre-determined market conditions
 eth_supply_apy = [0.1, 0.2, 0.3, 0.4, 0.5]
 eth_borrow_apy = [0.1, 0.2, 0.3, 0.4, 0.5]
 dai_supply_apy = [0.1, 0.2, 0.3, 0.4, 0.5]
@@ -49,6 +53,8 @@ dai_borrow_apy = [0.1, 0.2, 0.3, 0.4, 0.5]
 eth_price = [1000, 2000, 3000, 4000, 500]
 
 
+health_series = []
+pnl_series = []
 for i in range(5):
     plf_eth.supply_apy = eth_supply_apy[i]
     plf_eth.borrow_apy = eth_borrow_apy[i]
@@ -56,4 +62,8 @@ for i in range(5):
     plf_dai.borrow_apy = dai_borrow_apy[i]
     env.prices["eth"] = eth_price[i]
     env.accrue_interest()
-    print(charlie.plf_health)
+    health_series.append(charlie.plf_health)
+    pnl_series.append(charlie.wealth - INITIAL_FUNDS)
+
+plt.plot(health_series)
+plt.plot(pnl_series)
