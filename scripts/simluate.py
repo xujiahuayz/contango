@@ -1,6 +1,6 @@
 from matplotlib import pyplot as plt
 
-from perp.env import DefiEnv, PlfPool, User, cPool
+from perp.env import DefiEnv, PlfPool, User, cPerp, cPool
 from perp.utils import PriceDict
 
 env = DefiEnv(
@@ -37,14 +37,16 @@ plf_dai = PlfPool(
 c_eth = cPool(env=env, asset_name="eth", funds_available=1_000_000, c_ratio=0.2)
 c_dai = cPool(env=env, asset_name="dai", funds_available=1_000_000, c_ratio=0.2)
 
-charlie.open_contango(
+cperp1 = cPerp(
+    env=env,
+    position_name="cperp1",
+    initiator_name="Charlie",
     init_asset="dai",
     target_asset="eth",
     target_quantity=3,
     target_collateral_factor=0.8,
     trading_slippage=0,
 )
-
 # pre-determined market conditions
 eth_supply_apy = [0.1, 0.2, 0.3, 0.4, 0.5]
 eth_borrow_apy = [0.1, 0.2, 0.3, 0.4, 0.5]
@@ -62,7 +64,7 @@ for i in range(5):
     plf_dai.borrow_apy = dai_borrow_apy[i]
     env.prices["eth"] = eth_price[i]
     env.accrue_interest()
-    health_series.append(charlie.plf_health)
+    health_series.append(cperp1.plf_health)
     pnl_series.append(charlie.wealth - INITIAL_FUNDS)
 
 plt.plot(health_series)

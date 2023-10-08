@@ -22,13 +22,13 @@ class DefiEnv:
 
     def __init__(
         self,
-        users: dict[str, User] | None = None,
+        wallets: dict[str, User | cPerp] | None = None,
         prices: PriceDict | None = None,
         plf_pools: dict[str, PlfPool] | None = None,
         c_pools: dict[str, cPool] | None = None,
     ):
-        if users is None:
-            users = {}
+        if wallets is None:
+            wallets = {}
 
         if plf_pools is None:
             plf_pools = {}
@@ -39,7 +39,7 @@ class DefiEnv:
             prices = PriceDict({"dai": 1.0})
 
         self.prices = prices
-        self.users = users
+        self.wallets = wallets
         self.plf_pools = plf_pools
         self.c_pools = c_pools
         self.timestamp: float = 0
@@ -141,23 +141,23 @@ class PlfPool:
         record profit
         """
 
-        for user_name in self.user_i_tokens:
-            user_funds = self.env.users[user_name].funds_available
+        for wallet_name in self.user_i_tokens:
+            user_funds = self.env.wallets[wallet_name].funds_available
 
             # distribute i-token
             user_funds[self.interest_token_name] *= self.daily_supplier_multiplier
 
             # update i token register
-            self.user_i_tokens[user_name] = user_funds[self.interest_token_name]
+            self.user_i_tokens[wallet_name] = user_funds[self.interest_token_name]
 
-        for user_name in self.user_b_tokens:
-            user_funds = self.env.users[user_name].funds_available
+        for wallet_name in self.user_b_tokens:
+            user_funds = self.env.wallets[wallet_name].funds_available
 
             # distribute b-token
             user_funds[self.borrow_token_name] *= self.daily_borrow_multiplier
 
             # update b token register
-            self.user_b_tokens[user_name] = user_funds[self.borrow_token_name]
+            self.user_b_tokens[wallet_name] = user_funds[self.borrow_token_name]
 
 
 class cPool:
@@ -230,7 +230,7 @@ class cPool:
         """
 
         for user_name in self.user_i_tokens:
-            user_funds = self.env.users[user_name].funds_available
+            user_funds = self.env.wallets[user_name].funds_available
 
             # distribute i-token
             user_funds[self.interest_token_name] *= self.daily_supplier_multiplier
@@ -239,7 +239,7 @@ class cPool:
             self.user_i_tokens[user_name] = user_funds[self.interest_token_name]
 
         for user_name in self.user_b_tokens:
-            user_funds = self.env.users[user_name].funds_available
+            user_funds = self.env.wallets[user_name].funds_available
 
             # distribute b-token
             user_funds[self.borrow_token_name] *= self.daily_borrow_multiplier
@@ -248,42 +248,29 @@ class cPool:
             self.user_b_tokens[user_name] = user_funds[self.borrow_token_name]
 
 
-class User:
+class cPerp:
     def __init__(
-        self, env: DefiEnv, name: str, funds_available: dict[str, float] | None = None
-    ):
-        if funds_available is None:
-            funds_available = {"dai": 0.0, "eth": 0.0}
-        self.env = env
-        self.funds_available = funds_available
-        self.name = name
-        self.env.users[self.name] = self
-
-    @property
-    def wealth(self) -> float:
-        user_wealth = sum(
-            value * self.env.prices[asset_name]
-            for asset_name, value in self.funds_available.items()
-        )
-        logging.debug(f"{self.name}'s wealth in USD: {user_wealth}")
-
-        return user_wealth
-
-    def open_contango(
         self,
+        env: DefiEnv,
+        position_name: str,
+        initiator_name: str,
         init_asset: str,
         target_asset: str,
         target_quantity: float,
         target_collateral_factor: float,
         trading_slippage: float = 0.0,  # hard code slippage for now without using AMM
     ):
-        """
-        Open a contango position.
-        """
-        if init_asset not in self.funds_available.keys():
-            raise Exception("init_asset not in funds_available")
-        if target_quantity <= 0:
-            raise Exception("target_quantity must be greater than zero")
+        self.initiator = env.wallets[initiator_name]
+        if not isinstance(self.initiator, User):
+            raise TypeError("initiator must be a User")
+
+        self.env = env
+        self.name = position_name  # name of the position, analogous to the position's smart contract address
+        self.init_asset = init_asset
+        self.target_asset = target_asset
+        self.target_quantity = target_quantity
+        self.target_collateral_factor = target_collateral_factor
+        self.trading_slippage = trading_slippage
 
         plf_pool_init = self.env.plf_pools[init_asset]
         plf_pool_target = self.env.plf_pools[target_asset]
@@ -293,9 +280,11 @@ class User:
         plf_pool_target.user_i_tokens.setdefault(self.name, 0)
         plf_pool_init.user_b_tokens.setdefault(self.name, 0)
         c_pool_init.user_b_tokens.setdefault(self.name, 0)
-        self.funds_available.setdefault(plf_pool_target.interest_token_name, 0)
-        self.funds_available.setdefault(plf_pool_init.borrow_token_name, 0)
-        self.funds_available.setdefault(c_pool_init.borrow_token_name, 0)
+        self.funds_available: dict[str, float] = {
+            plf_pool_init.borrow_token_name: 0,
+            plf_pool_target.interest_token_name: 0,
+            c_pool_init.borrow_token_name: 0,
+        }
 
         init_quantity = (
             self.env.prices[target_asset]
@@ -304,7 +293,7 @@ class User:
         )
 
         # Begin with $(1-\theta^0)P_0$ DAI, take the amount out of user's wallet
-        self.funds_available[init_asset] -= (
+        self.initiator.funds_available[init_asset] -= (
             1 - target_collateral_factor
         ) * init_quantity
 
@@ -350,25 +339,61 @@ class User:
         # repay flashloan
         plf_pool_init.total_available_funds += borrow_amount_aave
 
+        # add cperp under user
+        self.initiator.cperps[self.name] = self
+        self.env.wallets[self.name] = self
+
     @property
     def plf_health(self) -> float:
         """
         Calculate the health factor of a user in a plf pool.
         """
-        discounted_deposit = 0
-        total_borrow = 0
-        for pool in self.env.plf_pools.values():
-            if self.name in pool.user_i_tokens:
-                discounted_deposit += (
-                    pool.user_i_tokens[self.name]
-                    * self.env.prices[pool.asset_name]
-                    * pool.liquidation_threshold
-                )
-            if self.name in pool.user_b_tokens:
-                total_borrow += (
-                    pool.user_b_tokens[self.name] * self.env.prices[pool.asset_name]
-                )
+        deposit_pool = self.env.plf_pools[self.target_asset]
+        borrow_pool = self.env.plf_pools[self.init_asset]
+        discounted_deposit = (
+            deposit_pool.user_i_tokens[self.name]
+            * self.env.prices[deposit_pool.asset_name]
+            * deposit_pool.liquidation_threshold
+        )
+        total_borrow = (
+            borrow_pool.user_b_tokens[self.name]
+            * self.env.prices[borrow_pool.asset_name]
+        )
         return discounted_deposit / total_borrow
+
+    @property
+    def value(self) -> float:
+        return sum(
+            value * self.env.prices[asset_name]
+            for asset_name, value in self.funds_available.items()
+        )
+
+
+class User:
+    def __init__(
+        self,
+        env: DefiEnv,
+        name: str,
+        funds_available: dict[str, float] | None = None,
+        cperps: dict[str, cPerp] | None = None,
+    ):
+        if funds_available is None:
+            funds_available = {"dai": 0.0, "eth": 0.0}
+        if cperps is None:
+            cperps = {}
+        self.env = env
+        self.funds_available = funds_available
+        self.name = name
+        self.env.wallets[self.name] = self
+        self.cperps = cperps
+
+    @property
+    def wealth(self) -> float:
+        user_wealth = sum(
+            value * self.env.prices[asset_name]
+            for asset_name, value in self.funds_available.items()
+        ) + sum(cperp.value for cperp in self.cperps.values())
+        return user_wealth
 
 
 if __name__ == "__main__":
@@ -405,7 +430,10 @@ if __name__ == "__main__":
     c_eth = cPool(env=env, asset_name="eth", funds_available=1_000_000, c_ratio=0.2)
     c_dai = cPool(env=env, asset_name="dai", funds_available=1_000_000, c_ratio=0.2)
 
-    charlie.open_contango(
+    cperp1 = cPerp(
+        env=env,
+        position_name="cperp1",
+        initiator_name="Charlie",
         init_asset="dai",
         target_asset="eth",
         target_quantity=3,
@@ -417,7 +445,7 @@ if __name__ == "__main__":
     print(plf_eth.user_i_tokens)
     print(plf_dai.user_b_tokens)
     print(c_dai.user_b_tokens)
-    print(charlie.plf_health)
+    print(cperp1.plf_health)
 
     plf_eth.supply_apy = 0.1
     plf_eth.borrow_apy = 0.2
@@ -431,4 +459,4 @@ if __name__ == "__main__":
     print(plf_eth.user_i_tokens)
     print(plf_dai.user_b_tokens)
     print(c_dai.user_b_tokens)
-    print(charlie.plf_health)
+    print(cperp1.plf_health)
