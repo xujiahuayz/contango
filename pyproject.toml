@@ -18,7 +18,7 @@ classifiers = [
 dependencies = [
     "numpy",
     "pandas",
-    "tqdm",
+    "requests",
     "matplotlib",
     "seaborn",
 ]
