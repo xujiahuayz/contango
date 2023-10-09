@@ -76,6 +76,7 @@ class PlfPool:
         collateral_factor: float,
         liquidation_threshold: float,
         flashloan_fee: float = 0.0,
+        periodic_exponent: float = 1 / 365,
     ):
         assert 0 <= collateral_factor <= 1, "collateral_factor must be between 0 and 1"
         assert (
@@ -89,6 +90,7 @@ class PlfPool:
         self.collateral_factor = collateral_factor
         self.liquidation_threshold = liquidation_threshold
         self.flashloan_fee = flashloan_fee
+        self.periodic_exponent = periodic_exponent
 
         self.interest_token_name = (
             INTEREST_TOKEN_PREFIX + AAVE_TOKEN_PREFIX + self.asset_name
@@ -128,12 +130,12 @@ class PlfPool:
         return sum(self.user_b_tokens.values())
 
     @property
-    def daily_supplier_multiplier(self) -> float:
-        return (1 + self.supply_apy) ** (1 / 365)
+    def periodic_supplier_multiplier(self) -> float:
+        return (1 + self.supply_apy) ** self.periodic_exponent
 
     @property
-    def daily_borrow_multiplier(self) -> float:
-        return (1 + self.borrow_apy) ** (1 / 365)
+    def periodic_borrow_multiplier(self) -> float:
+        return (1 + self.borrow_apy) ** self.periodic_exponent
 
     def accrue_daily_interest(self):
         """
@@ -145,7 +147,7 @@ class PlfPool:
             user_funds = self.env.wallets[wallet_name].funds_available
 
             # distribute i-token
-            user_funds[self.interest_token_name] *= self.daily_supplier_multiplier
+            user_funds[self.interest_token_name] *= self.periodic_supplier_multiplier
 
             # update i token register
             self.user_i_tokens[wallet_name] = user_funds[self.interest_token_name]
@@ -154,7 +156,7 @@ class PlfPool:
             user_funds = self.env.wallets[wallet_name].funds_available
 
             # distribute b-token
-            user_funds[self.borrow_token_name] *= self.daily_borrow_multiplier
+            user_funds[self.borrow_token_name] *= self.periodic_borrow_multiplier
 
             # update b token register
             self.user_b_tokens[wallet_name] = user_funds[self.borrow_token_name]
@@ -172,6 +174,7 @@ class cPool:
         funds_available: float = 0.0,
         c_ratio: float = 0.2,
         fee: float = 0.0,
+        periodic_exponent: float = 1 / 365,
     ):
         self.env = env
         self.asset_name = asset_name
@@ -181,6 +184,7 @@ class cPool:
         self.user_b_tokens: dict[str, float] = {}
         self.c_ratio = c_ratio
         self.fee = fee
+        self.periodic_exponent = periodic_exponent
 
         self.interest_token_name = (
             INTEREST_TOKEN_PREFIX + CONTANGO_TOKEN_PREFIX + self.asset_name
@@ -217,11 +221,11 @@ class cPool:
 
     @property
     def daily_supplier_multiplier(self) -> float:
-        return (1 + self.supply_apy) ** (1 / 365)
+        return (1 + self.supply_apy) ** self.periodic_exponent
 
     @property
     def daily_borrow_multiplier(self) -> float:
-        return (1 + self.borrow_apy) ** (1 / 365)
+        return (1 + self.borrow_apy) ** self.periodic_exponent
 
     def accrue_daily_interest(self):
         """
@@ -313,11 +317,13 @@ class cPerp:
 
         plf_pool_init.total_available_funds -= flashloan_amount
 
+        deposit_amount_total = (1 - trading_slippage) * target_quantity
+        deposit_fee = deposit_amount_total * c_pool_target.fee
+        c_pool_target.funds_available += deposit_fee
+
         # Put together $(1-\theta^0)P_0$, $C\theta^0P_0$ , and $(1 - C)\theta^{0}P_0$ to swap in total $P_0$ DAI for $(1-\epsilon)$ ETH, where $\epsilon$ is the effect of price movement and slippage (can be positive or negative)
         # Deposit swapped $(1-\epsilon)(1-f^C)$ ETH as collateral on Aave and start earning interest according to $(1-\epsilon)(1-f^C)e^{r^c t}$
-        deposit_amount = (
-            (1 - trading_slippage) * (1 - c_pool_target.fee) * target_quantity
-        )
+        deposit_amount = deposit_amount_total - deposit_fee
 
         plf_pool_target.total_available_funds += deposit_amount
         plf_pool_target.user_i_tokens[self.name] += deposit_amount

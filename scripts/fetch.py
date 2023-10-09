@@ -75,7 +75,11 @@ aave_eth_deposit = interpolate_df(
 aave_df = pd.concat([aave_usdc_borrow, aave_eth_deposit], axis=1)
 
 
-binance_df = pd.read_json(BINANCE_PATH)
+binance_df = pd.read_json(BINANCE_PATH).rename(
+    columns={
+        "fundingRate": "binance_funding_rate",
+    }
+)
 # set fundingTime to the nearest 8-hour interval
 binance_df["fundingTime"] = (
     pd.to_datetime(binance_df["fundingTime"], unit="ms")
@@ -93,7 +97,7 @@ dydx_df = pd.read_json(DYDX_PATH, convert_dates=["effectiveAt"]).set_index(
 # merge aave_df with dydx_df[price] based on the index
 aave_binance_df = (
     aave_df.merge(dydx_df[["price"]], left_index=True, right_index=True)
-    .merge(binance_df[["fundingRate"]], left_index=True, right_index=True)
+    .merge(binance_df[["binance_funding_rate"]], left_index=True, right_index=True)
     .dropna()
 )
 assert sum(aave_binance_df.resample("8H").asfreq().index != aave_binance_df.index) == 0
