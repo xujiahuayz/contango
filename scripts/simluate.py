@@ -1,11 +1,10 @@
-from matplotlib import pyplot as plt
 import numpy as np
-from perp.constants import DATA_PATH
+from matplotlib import pyplot as plt
 
+from perp.constants import DATA_PATH
 from perp.env import DefiEnv, PlfPool, User, cPerp, cPool
 from perp.utils import PriceDict
 from scripts.fetch import aave_binance_df
-
 
 env = DefiEnv(
     prices=PriceDict({"usdc": 1.0, "eth": aave_binance_df.iloc[0]["price"]}),
@@ -67,10 +66,6 @@ cperp1 = cPerp(
     trading_slippage=0,
 )
 
-# health_series = []
-# pnl_series = []
-# c_perp_value_series = []
-# principal_series = []
 
 # initiate a new float column in aave_binance_df
 aave_binance_df["cperp_health"] = np.nan
@@ -105,6 +100,5 @@ plt.legend()
 
 # save aaave_binance_df to excel
 aave_binance_excel = aave_binance_df.copy()
-
 aave_binance_excel.index = aave_binance_df.index.tz_localize(None)
 aave_binance_excel.to_excel(DATA_PATH / "aave_binance_df.xlsx")

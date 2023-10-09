@@ -1,6 +1,6 @@
 import json
-import pandas as pd
 
+import pandas as pd
 import requests
 
 from perp.constants import DATA_PATH
