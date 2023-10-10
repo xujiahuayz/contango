@@ -1,9 +1,55 @@
 import json
+from matplotlib import pyplot as plt
 
 import pandas as pd
 import requests
 
 from perp.constants import DATA_PATH
+
+
+COINGLASS_ENDPOINT = "https://open-api.coinglass.com/public/v2/funding_usd_history"
+params = {"symbol": "ETH", "time_type": "h8"}
+# Set up headers
+headers = {
+    "accept": "application/json",
+    "coinglasssecret": "78d03aeef74a4ba499c80dcd21676d35",
+}
+
+# Make the request
+response = requests.get(COINGLASS_ENDPOINT, headers=headers, params=params)
+
+COINGLASS_PATH = DATA_PATH / "coinglass_ethusd.json"
+
+if not COINGLASS_PATH.exists():
+    # Check if the request was successful
+    if response.status_code == 200:
+        results = response.json()["data"]
+        # save results, which is a list to COINGLASS_PATH
+        with open(COINGLASS_PATH, "w") as f:
+            json.dump(results, f, indent=2)
+    else:
+        print(f"Error {response.status_code}: {response.text}")
+
+
+# turn the json file into a dataframe, flatten the json
+
+with open(COINGLASS_PATH, "r") as f:
+    results = json.load(f)
+dataMap = pd.DataFrame(results["dataMap"])
+frDataMap = pd.DataFrame(results["frDataMap"])
+dataMap == frDataMap
+# merge the two dataframes
+coinglass_df = dataMap.merge(
+    frDataMap, left_index=True, right_index=True, suffixes=("", "_fr")
+)
+coinglass_df["timestamp"] = pd.to_datetime(results["dateList"], unit="ms")
+coinglass_df.set_index("timestamp", inplace=True)
+
+plt.plot(coinglass_df["dYdX"], label="dydx")
+plt.plot(coinglass_df["Binance"], label="binance")
+
+# save coinbase_df to excel
+coinglass_df.to_excel(DATA_PATH / "coinglass_df.xlsx")
 
 BINANCE_PATH = DATA_PATH / "binance_ethusd.json"
 BINANCE_PATH_FULL = DATA_PATH / "binance_ethusd_full.csv"

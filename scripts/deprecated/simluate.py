@@ -4,10 +4,10 @@ from matplotlib import pyplot as plt
 from perp.constants import DATA_PATH
 from perp.env import DefiEnv, PlfPool, User, cPerp, cPool
 from perp.utils import PriceDict
-from scripts.process_coinglass import coinglass_aave_df
+from scripts.fetch import aave_binance_df, dydx_df_cleaned
 
 env = DefiEnv(
-    prices=PriceDict({"usdc": 1.0, "eth": coinglass_aave_df.iloc[0]["price"]}),
+    prices=PriceDict({"usdc": 1.0, "eth": aave_binance_df.iloc[0]["price"]}),
 )
 market_user = User(
     env=env,
@@ -67,50 +67,56 @@ cperp1 = cPerp(
 )
 
 
-# initiate a new float column in coinglass_aave_df
-coinglass_aave_df["cperp_health"] = np.nan
-coinglass_aave_df["cperp_pnl"] = np.nan
-coinglass_aave_df["cperp_value"] = np.nan
-coinglass_aave_df["cperp_principal"] = np.nan
+# initiate a new float column in aave_binance_df
+aave_binance_df["cperp_health"] = np.nan
+aave_binance_df["cperp_pnl"] = np.nan
+aave_binance_df["cperp_value"] = np.nan
+aave_binance_df["cperp_principal"] = np.nan
 
-# get index and row values in coinglass_aave_df
-for index, row_values in coinglass_aave_df.iterrows():
+# get index and row values in aave_binance_df
+for index, row_values in aave_binance_df.iterrows():
     plf_eth.supply_apy = row_values["eth_deposit_apy"]
     plf_usdc.borrow_apy = row_values["usdc_borrow_apy"]
     env.prices["eth"] = row_values["price"]
     # assign values to the row
-    coinglass_aave_df.at[index, "cperp_health"] = cperp1.plf_health
-    coinglass_aave_df.at[index, "cperp_pnl"] = charlie.wealth - INITIAL_FUNDS
-    coinglass_aave_df.at[index, "cperp_value"] = cperp1.value
-    coinglass_aave_df.at[index, "cperp_principal"] = cperp1.funds_available[
+    aave_binance_df.at[index, "cperp_health"] = cperp1.plf_health
+    aave_binance_df.at[index, "cperp_pnl"] = charlie.wealth - INITIAL_FUNDS
+    aave_binance_df.at[index, "cperp_value"] = cperp1.value
+    aave_binance_df.at[index, "cperp_principal"] = cperp1.funds_available[
         plf_eth.interest_token_name
     ]
 
     env.accrue_interest()
 
 # rolling diff of cperp_value
-coinglass_aave_df["cperp_value_diff"] = coinglass_aave_df["cperp_value"].diff()
+aave_binance_df["cperp_value_diff"] = aave_binance_df["cperp_value"].diff()
 
-coinglass_aave_df["cperp_principal_value_change"] = coinglass_aave_df[
+aave_binance_df["cperp_principal_value_change"] = aave_binance_df[
     "cperp_principal"
-].shift(1) * coinglass_aave_df["price"].diff(1)
+].shift(1) * aave_binance_df["price"].diff(1)
 
-coinglass_aave_df["cperp_funding_payment"] = (
-    coinglass_aave_df["cperp_value_diff"]
-    - coinglass_aave_df["cperp_principal_value_change"]
+aave_binance_df["cperp_funding_payment"] = (
+    aave_binance_df["cperp_value_diff"]
+    - aave_binance_df["cperp_principal_value_change"]
 )
 
-coinglass_aave_df["Contango"] = coinglass_aave_df["cperp_funding_payment"] / (
-    coinglass_aave_df["price"] * coinglass_aave_df["cperp_principal"]
+aave_binance_df["cperp_funding_rate"] = aave_binance_df["cperp_funding_payment"] / (
+    aave_binance_df["price"] * aave_binance_df["cperp_principal"]
 )
 
+aave_binance_dydx_df = aave_binance_df.merge(
+    dydx_df_cleaned[["dydx_funding_payment_8H"]], left_index=True, right_index=True
+)
+aave_binance_dydx_df["dydx_funding_rate"] = (
+    aave_binance_dydx_df["dydx_funding_payment_8H"] / aave_binance_dydx_df["price"]
+)
 
-plt.plot(coinglass_aave_df["dYdX"], label="dYdX")
-plt.plot(coinglass_aave_df["Binance"], label="Binance")
-plt.plot(coinglass_aave_df["Contango"], label="Contango")
+plt.plot(aave_binance_dydx_df["dydx_funding_rate"], label="dydx_funding_rate")
+plt.plot(aave_binance_dydx_df["binance_funding_rate"], label="binance_funding_rate")
+plt.plot(aave_binance_dydx_df["cperp_funding_rate"], label="cperp_funding_rate")
 plt.legend()
 
 # save aaave_binance_df to excel
-aave_binance_excel = coinglass_aave_df.copy()
+aave_binance_excel = aave_binance_dydx_df.copy()
 aave_binance_excel.index = aave_binance_excel.index.tz_localize(None)
-aave_binance_excel.to_excel(DATA_PATH / "coinglass_aave_df.xlsx")
+aave_binance_excel.to_excel(DATA_PATH / "aave_binance_df.xlsx")

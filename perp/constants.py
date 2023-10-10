@@ -9,3 +9,6 @@ DEBT_TOKEN_PREFIX = "debt-"
 
 CONTANGO_TOKEN_PREFIX = "c-"
 AAVE_TOKEN_PREFIX = "a-"
+
+
+COINGLASS_PATH = DATA_PATH / "coinglass_ethusd.json"

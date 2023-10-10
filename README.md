@@ -59,6 +59,18 @@ pip install toml
 pip install -e ".[dev]"
 ```
 
+## Set up the environmental variables
+
+put your `COINGLASS_SECRET` in `.env`:
+
+```
+COINGLASS_SECRET="abc123"
+```
+
+```
+export $(cat .env | xargs)
+```
+
 ## Running the simulation
 
 <!-- TODO -->
