@@ -4,7 +4,7 @@ from matplotlib import pyplot as plt
 from perp.constants import DATA_PATH
 from perp.env import DefiEnv, PlfPool, User, cPerp, cPool
 from perp.utils import PriceDict
-from scripts.fetch import aave_binance_df
+from scripts.fetch import aave_binance_df, dydx_df_cleaned
 
 env = DefiEnv(
     prices=PriceDict({"usdc": 1.0, "eth": aave_binance_df.iloc[0]["price"]}),
@@ -104,11 +104,19 @@ aave_binance_df["cperp_funding_rate"] = aave_binance_df["cperp_funding_payment"]
     aave_binance_df["price"] * aave_binance_df["cperp_principal"]
 )
 
-plt.plot(aave_binance_df["cperp_funding_rate"], label="cperp_funding_rate")
-plt.plot(aave_binance_df["binance_funding_rate"], label="binance_funding_rate")
+aave_binance_dydx_df = aave_binance_df.merge(
+    dydx_df_cleaned[["dydx_funding_payment_8H"]], left_index=True, right_index=True
+)
+aave_binance_dydx_df["dydx_funding_rate"] = (
+    aave_binance_dydx_df["dydx_funding_payment_8H"] / aave_binance_dydx_df["price"]
+)
+
+plt.plot(aave_binance_dydx_df["dydx_funding_rate"], label="dydx_funding_rate")
+plt.plot(aave_binance_dydx_df["binance_funding_rate"], label="binance_funding_rate")
+plt.plot(aave_binance_dydx_df["cperp_funding_rate"], label="cperp_funding_rate")
 plt.legend()
 
 # save aaave_binance_df to excel
-aave_binance_excel = aave_binance_df.copy()
-aave_binance_excel.index = aave_binance_df.index.tz_localize(None)
+aave_binance_excel = aave_binance_dydx_df.copy()
+aave_binance_excel.index = aave_binance_excel.index.tz_localize(None)
 aave_binance_excel.to_excel(DATA_PATH / "aave_binance_df.xlsx")

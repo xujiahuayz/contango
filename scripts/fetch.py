@@ -99,5 +99,24 @@ aave_binance_df = (
     aave_df.merge(dydx_df[["price"]], left_index=True, right_index=True)
     .merge(binance_df[["binance_funding_rate"]], left_index=True, right_index=True)
     .dropna()
+    .sort_index()
 )
 assert sum(aave_binance_df.resample("8H").asfreq().index != aave_binance_df.index) == 0
+
+# interpolate aave_binance_df.index to hourly
+new_index_dydx = aave_binance_df[[]].resample("1H").asfreq().interpolate()
+
+# interpolate dydx_df with new_index_dydx
+dydx_df_cleaned = (
+    dydx_df.merge(new_index_dydx, left_index=True, right_index=True)[["rate", "price"]]
+    .sort_index()
+    .iloc[1:]
+)
+assert len(dydx_df_cleaned) == len(new_index_dydx) - 1
+
+dydx_df_cleaned["funding_payment_1H"] = (
+    dydx_df_cleaned["rate"] * dydx_df_cleaned["price"]
+)
+dydx_df_cleaned["dydx_funding_payment_8H"] = (
+    dydx_df_cleaned["funding_payment_1H"].rolling(8).sum()
+)
