@@ -90,7 +90,17 @@ for index, row_values in aave_binance_df.iterrows():
 
 # rolling diff of cperp_value
 aave_binance_df["cperp_value_diff"] = aave_binance_df["cperp_value"].diff()
-aave_binance_df["cperp_funding_rate"] = aave_binance_df["cperp_value_diff"] / (
+
+aave_binance_df["cperp_principal_value_change"] = aave_binance_df[
+    "cperp_principal"
+].shift(1) * aave_binance_df["price"].diff(1)
+
+aave_binance_df["cperp_funding_payment"] = (
+    aave_binance_df["cperp_value_diff"]
+    - aave_binance_df["cperp_principal_value_change"]
+)
+
+aave_binance_df["cperp_funding_rate"] = aave_binance_df["cperp_funding_payment"] / (
     aave_binance_df["price"] * aave_binance_df["cperp_principal"]
 )
 
