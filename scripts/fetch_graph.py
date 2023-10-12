@@ -1,14 +1,14 @@
-from pickle import dump
+import gzip
+import json
 
-
+from perp.constants import AAVE_V3_PARAM_PATH
 from perp.graphql import graphdata, query_structurer
-from perp.constants import DATA_PATH
 
 BATCH_SIZE = 1000
-AAVE_V1_ENDPOINT = "https://api.thegraph.com/subgraphs/name/aave/protocol-multy-raw"
+AAVE_V3_ENDPOINT = "https://api.thegraph.com/subgraphs/name/aave/protocol-v3"
 
-series3 = "reserveParamsHistoryItems"
-specs3 = """
+series = "reserveParamsHistoryItems"
+specs = """
     reserve{
       symbol
     }
@@ -22,28 +22,21 @@ specs3 = """
     totalLiquidity
     totalLiquidityAsCollateral
     availableLiquidity
-    totalBorrows
-    totalBorrowsVariable
-    totalBorrowsStable
     timestamp
 """
 
-# "The `first` argument must be between 0 and 1000, but is 2000
-if __name__ == "__main__":
-    last_ts = 0
-    data_reservepara = []
+last_ts = 0
+with gzip.open(AAVE_V3_PARAM_PATH, "wt") as f:
     while True:
         reservepara_query = query_structurer(
-            series3,
-            specs3,
+            series,
+            specs,
             arg=f"first: {BATCH_SIZE}, orderBy: timestamp, orderDirection: asc, where: {{ timestamp_gt: {last_ts}}}",
         )
-        res = graphdata(reservepara_query, url=AAVE_V1_ENDPOINT)
-        if "data" in set(res) and res["data"][series3]:
-            rows = res["data"][series3]
-            data_reservepara.extend(rows)
+        res = graphdata(reservepara_query, url=AAVE_V3_ENDPOINT)
+        if "data" in set(res) and res["data"][series]:
+            rows = res["data"][series]
+            f.write("\n".join([json.dumps(row) for row in rows]) + "\n")
             last_ts = rows[-1]["timestamp"]
         else:
             break
-
-    dump(data_reservepara, open(DATA_PATH / "reservepara.pkl", "wb"))

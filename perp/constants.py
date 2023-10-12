@@ -12,3 +12,4 @@ AAVE_TOKEN_PREFIX = "a-"
 
 
 COINGLASS_PATH = DATA_PATH / "coinglass_ethusd.json"
+AAVE_V3_PARAM_PATH = DATA_PATH / "reservepara_v3.jsonl.gz"
