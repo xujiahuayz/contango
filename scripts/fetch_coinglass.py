@@ -12,7 +12,7 @@ params = {"symbol": "ETH", "time_type": "h8"}
 # Set up headers
 headers = {
     "accept": "application/json",
-    "coinglasssecret": "78d03aeef74a4ba499c80dcd21676d35",
+    "coinglasssecret": COINGLASS_SECRET,
 }
 
 # Make the request

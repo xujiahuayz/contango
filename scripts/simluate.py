@@ -105,8 +105,11 @@ coinglass_aave_df["Contango"] = coinglass_aave_df["cperp_funding_payment"] / (
 )
 
 
-plt.plot(coinglass_aave_df["dYdX"], label="dYdX")
 plt.plot(coinglass_aave_df["Binance"], label="Binance")
+plt.plot(coinglass_aave_df["OKX"], label="OKX")
+
+
+plt.plot(coinglass_aave_df["dYdX"], label="dYdX")
 plt.plot(coinglass_aave_df["Contango"], label="Contango")
 plt.legend()
 
