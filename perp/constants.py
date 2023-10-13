@@ -11,5 +11,22 @@ CONTANGO_TOKEN_PREFIX = "c-"
 AAVE_TOKEN_PREFIX = "a-"
 
 
-COINGLASS_PATH = DATA_PATH / "coinglass_ethusd.json"
+COINGLASS_PATH = DATA_PATH / "coinglass.jsonl.gz"
 AAVE_V3_PARAM_PATH = DATA_PATH / "reservepara_v3.jsonl.gz"
+
+
+SYMBOL_LIST = [
+    "ETH",
+    "BTC",
+    "LINK",
+    "UNI",
+    "AAVE",
+    "CRV",
+    "MKR",
+    "BAL",
+    "SNX",
+    "LDO",
+    "1INCH",
+    "ENS",
+    "RPL",
+]
