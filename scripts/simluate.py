@@ -13,6 +13,7 @@ def c_perp_position_change(
     risk_asset: str,
     usd_asset: str,
     long_risk: bool,
+    leverage_multiplier: float,
 ) -> pd.DataFrame:
     coinglass_df = coinglass_fr_df(risk_asset=risk_asset)
     aave_df = aave_rates_df(
@@ -90,7 +91,7 @@ def c_perp_position_change(
         init_asset=usd_asset if long_risk else risk_asset,
         target_asset=risk_asset if long_risk else usd_asset,
         target_quantity=1,
-        target_collateral_factor=0.8,
+        target_collateral_factor=1 - 1 / leverage_multiplier,
         trading_slippage=0,
     )
 
@@ -142,7 +143,7 @@ def c_perp_position_change(
 
 if __name__ == "__main__":
     coinglass_aave_df = c_perp_position_change(
-        risk_asset="ETH", usd_asset="USDC", long_risk=False
+        risk_asset="ETH", usd_asset="USDC", long_risk=False, leverage_multiplier=5
     )
     plt.plot(coinglass_aave_df["Binance"], label="Binance")
     plt.plot(coinglass_aave_df["OKX"], label="OKX")
