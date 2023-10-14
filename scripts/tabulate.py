@@ -48,7 +48,7 @@ for symbol in SYMBOL_LIST:
 
     # turn to latex table
     latex_table = f"\\renewcommand{{\\maxnum}}{{{max_std}}}\n" + sum_df.to_latex(
-        column_format="@{}l@{\hspace{3mm}}rrrrrrrr@{}", escape=False
+        column_format="@{}l@{\hspace{3mm}}r*{6}{R{10mm}}r@{}", escape=False
     )
     #  save to file
     with open(TABLE_PATH / f"funding_rates_{symbol}.tex", "w") as f:
