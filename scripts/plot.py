@@ -5,6 +5,11 @@ import matplotlib.pyplot as plt
 import matplotlib.dates as mdates
 
 products = ["dYdX", "Huobi", "Binance", "Contango"]
+# set plot color with python default color
+product_color = ["C0", "C1", "C2", "C3"]
+
+
+# product_color = ["#68228B", "#FF3030", "#B8860B", "#00CED1"]
 
 for symbol in SYMBOL_LIST:
     coinglass_aave_df = c_perp_position_change(
@@ -13,14 +18,30 @@ for symbol in SYMBOL_LIST:
 
     coinglass_aave_df = coinglass_aave_df[products] * 100
 
-    # plot with large font size
-
     plt.rcParams.update({"font.size": 20})
+    # initiate the plot with dark gray background in the plot area
     fig, ax = plt.subplots()
-
-    # Plot the data
-    for product in products:
-        ax.plot(coinglass_aave_df.index, coinglass_aave_df[product], label=product)
+    ax.axhline(y=0, color="k", linestyle="-", linewidth=0.4)
+    for i, product in enumerate(products):
+        # add alpha with the same color
+        ax.plot(
+            coinglass_aave_df.index,
+            coinglass_aave_df[product],
+            color=product_color[i],
+            alpha=0.45,
+            linewidth=0.45,
+            marker=".",
+            markersize=1,
+        )
+        # add 7 days rolling average with the same color
+        ax.plot(
+            coinglass_aave_df.index,
+            coinglass_aave_df[product].rolling(7 * 3, center=True).mean(),
+            color=product_color[i],
+            label=product,
+            linewidth=1.5,
+            alpha=0.9,
+        )
 
     # Add a legend on top of the plot outside the frame without border
     ax.legend(ncol=2, loc="upper center", bbox_to_anchor=(0.5, 1.3), frameon=False)
