@@ -40,7 +40,7 @@ for symbol in SYMBOL_LIST:
         if "%" in col:
             sum_df.rename(columns={col: f"{col[:-1]}\%"}, inplace=True)
 
-    max_std = sum_df["std"].max().round(4)
+    max_std = f'{sum_df["std"].max():.4f}'
     sum_df["std"] = sum_df["std"].apply(lambda x: f"\databar{{{x:.4f}}}")
 
     # replace contango with {\bf Contango}
