@@ -3,6 +3,7 @@ from perp.settings import PROJECT_ROOT
 DATA_PATH = PROJECT_ROOT / "data"
 FIGURE_PATH = PROJECT_ROOT / "figures"
 CACHE_PATH = PROJECT_ROOT / ".cache"
+TABLE_PATH = PROJECT_ROOT / "tables"
 
 INTEREST_TOKEN_PREFIX = "interest-"
 DEBT_TOKEN_PREFIX = "debt-"
@@ -23,10 +24,10 @@ SYMBOL_LIST = [
     "AAVE",
     "CRV",
     "MKR",
-    "BAL",
+    # "BAL",
     "SNX",
-    "LDO",
-    "1INCH",
-    "ENS",
-    "RPL",
+    # "LDO",
+    # "1INCH",
+    # "ENS",
+    # "RPL",
 ]

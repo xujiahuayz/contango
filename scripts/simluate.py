@@ -134,7 +134,7 @@ def c_perp_position_change(
 
     df["cperp_funding_payment"] = (
         df["cperp_value_diff"] - df["cperp_principal_value_change"]
-    )
+    ) * (-1) ** long_risk
 
     df["Contango"] = df["cperp_funding_payment"] / (df["price"] * df["cperp_principal"])
 

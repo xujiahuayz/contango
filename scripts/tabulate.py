@@ -1,10 +1,7 @@
-from perp.constants import DATA_PATH, SYMBOL_LIST
+from perp.constants import SYMBOL_LIST, TABLE_PATH
 from scripts.simluate import c_perp_position_change
 
-import matplotlib.pyplot as plt
-
 for symbol in SYMBOL_LIST:
-    print(symbol)
     coinglass_aave_df = c_perp_position_change(
         risk_asset=symbol, usd_asset="USDC", long_risk=True, leverage_multiplier=5
     )
@@ -36,20 +33,23 @@ for symbol in SYMBOL_LIST:
     )
 
     sum_df["count"] = sum_df["count"].astype(int)
-    print(sum_df)
+    # reformat "mean", "min", "25%", "50%", "75%", "max", as $0.000$
+    for col in ["mean", "min", "25%", "50%", "75%", "max"]:
+        sum_df[col] = sum_df[col].apply(lambda x: f"${x:.4f}$")
+        # if colname has %, rename to xx percentile
+        if "%" in col:
+            sum_df.rename(columns={col: f"{col[:-1]}\%"}, inplace=True)
 
+    max_std = sum_df["std"].max().round(4)
+    sum_df["std"] = sum_df["std"].apply(lambda x: f"\databar{{{x:.4f}}}")
 
-# plt.plot(coinglass_aave_df["dYdX"], label="dYdX")
+    # replace contango with {\bf Contango}
+    sum_df.rename(index={"Contango": "{\\bf Contango}"}, inplace=True)
 
-# plt.plot(coinglass_aave_df["OKX"], label="OKX")
-# plt.plot(coinglass_aave_df["Binance"], label="Binance")
-
-# plt.plot(coinglass_aave_df["Contango"], label="Contango")
-# plt.legend()
-
-
-plt.plot(coinglass_aave_df["cperp_health"])
-# draw a horizontal line at 1
-plt.axhline(y=1, color="r", linestyle="-")
-
-coinglass_aave_df.to_excel(DATA_PATH / "coinglass_aave_df.xlsx")
+    # turn to latex table
+    latex_table = f"\\renewcommand{{\\maxnum}}{{{max_std}}}\n" + sum_df.to_latex(
+        column_format="@{}l@{\hspace{3mm}}rrrrrrrr@{}", escape=False
+    )
+    #  save to file
+    with open(TABLE_PATH / f"funding_rates_{symbol}.tex", "w") as f:
+        f.write(latex_table)
