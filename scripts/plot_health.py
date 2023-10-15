@@ -81,7 +81,7 @@ for symbol in SYMBOL_LIST:
 
     # save to file
     plt.savefig(
-        FIGURE_PATH / f"leverage_{symbol}.pdf",
+        FIGURE_PATH / f"health_{symbol}.pdf",
         bbox_inches="tight",
         pad_inches=0,
         transparent=True,
