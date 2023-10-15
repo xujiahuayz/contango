@@ -26,7 +26,6 @@ for symbol in SYMBOL_LIST:
     # save corr_with_color to latex and preserve the color
     corr_latex = corr_with_color.to_latex(
         convert_css=True, column_format="@{}l*{9}{R{9.8mm}}@{}"
-    )
-    print(corr_latex)
+    ).replace("Contango", "{\\bf Contango}")
     with open(TABLE_PATH / f"corr_{symbol}.tex", "w") as f:
         f.write(corr_latex)
