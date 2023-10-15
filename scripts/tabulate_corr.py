@@ -1,10 +1,11 @@
-from seaborn import diverging_palette
+from matplotlib.colors import LinearSegmentedColormap
 
 from perp.constants import PRODUCT_LIST, SYMBOL_LIST, TABLE_PATH
 from scripts.simluate import c_perp_position_change
 
 # define for background_gradient the cmap argument (type Colormap) that is light red for 1 and light blue for -1 and white for 0
-color_map = diverging_palette(220, 20, as_cmap=True)
+colors = [(0.5, 0.5, 1), (1, 1, 1), (1, 0.5, 0.5)]  # Light red, white, light blue
+color_map = LinearSegmentedColormap.from_list("custom", colors)
 
 for symbol in SYMBOL_LIST:
     coinglass_aave_df = c_perp_position_change(
@@ -16,7 +17,9 @@ for symbol in SYMBOL_LIST:
     # get significance level
     corr_significance = sum_df.corr(method="spearman")
 
-    corr_with_color = corr.style.background_gradient(cmap=color_map).format(
+    corr_with_color = corr.style.background_gradient(
+        cmap=color_map, vmin=-1, vmax=1
+    ).format(
         "{:.2f}"
     )  # format to 2 decimals
 
