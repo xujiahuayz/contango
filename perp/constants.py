@@ -31,3 +31,17 @@ SYMBOL_LIST = [
     # "ENS",
     # "RPL",
 ]
+
+PRODUCT_LIST = [
+    # "Bitmex",
+    "Binance",
+    "Bybit",
+    "OKX",
+    "Huobi",
+    "Gate",
+    "Bitget",
+    "dYdX",
+    "CoinEx",
+    # "BingX",
+    "Contango",
+]

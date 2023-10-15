@@ -1,4 +1,4 @@
-from perp.constants import SYMBOL_LIST, TABLE_PATH
+from perp.constants import PRODUCT_LIST, SYMBOL_LIST, TABLE_PATH
 from scripts.simluate import c_perp_position_change
 
 for symbol in SYMBOL_LIST:
@@ -6,26 +6,7 @@ for symbol in SYMBOL_LIST:
         risk_asset=symbol, usd_asset="USDC", long_risk=True, leverage_multiplier=5
     )
     sum_df = (
-        (
-            (
-                coinglass_aave_df[
-                    [
-                        # "Bitmex",
-                        "Binance",
-                        "Bybit",
-                        "OKX",
-                        "Huobi",
-                        "Gate",
-                        "Bitget",
-                        "dYdX",
-                        "CoinEx",
-                        # "BingX",
-                        "Contango",
-                    ]
-                ].iloc[1:-1]
-            )
-            * 100
-        )  # convert to percentage
+        ((coinglass_aave_df[PRODUCT_LIST].iloc[1:-1]) * 100)  # convert to percentage
         .describe()
         .T.sort_values("std", ascending=True)[
             ["std", "mean", "min", "25%", "50%", "75%", "max", "count"]
@@ -47,8 +28,8 @@ for symbol in SYMBOL_LIST:
     sum_df.rename(index={"Contango": "{\\bf Contango}"}, inplace=True)
 
     # turn to latex table
-    latex_table = f"\\renewcommand{{\\maxnum}}{{{max_std}}}\n" + sum_df.to_latex(
-        column_format="@{}l@{\hspace{3mm}}r*{6}{R{10mm}}r@{}", escape=False
+    latex_table = f"\\renewcommand{{\\maxnum}}{{{max_std}}}\n" + sum_df.style.to_latex(
+        column_format="@{}l@{\hspace{3mm}}r*{6}{R{10mm}}r@{}"
     )
     #  save to file
     with open(TABLE_PATH / f"funding_rates_{symbol}.tex", "w") as f:
