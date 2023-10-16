@@ -17,7 +17,7 @@ for symbol in SYMBOL_LIST:
     ax.axhline(y=1, color="k", linestyle="-", linewidth=0.4)
     # yaxis range from 0.5 to 5.5
     ax.set_ylim([0.3, 5.7])
-    ax2.set_ylim([-0.23, 0.23])
+    ax2.set_ylim([-0.24, 0.24])
     # set ylabel
     ax.set_ylabel("Health factor")
     ax2.set_ylabel("Log return")
@@ -25,7 +25,7 @@ for symbol in SYMBOL_LIST:
         for long_risk in [True, False]:
             df = c_perp_position_change(
                 risk_asset=symbol,
-                usd_asset="USDC",
+                usd_asset="DAI",
                 long_risk=long_risk,
                 leverage_multiplier=leverage,
             )

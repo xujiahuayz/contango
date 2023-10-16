@@ -17,7 +17,7 @@ for symbol in SYMBOL_LIST:
                 (
                     c_perp_position_change(
                         risk_asset=symbol,
-                        usd_asset="USDC",
+                        usd_asset="DAI",
                         long_risk=long_risk,
                         leverage_multiplier=leverage,
                     )["Contango"]

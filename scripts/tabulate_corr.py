@@ -9,7 +9,7 @@ color_map = LinearSegmentedColormap.from_list("custom", colors)
 
 for symbol in SYMBOL_LIST:
     coinglass_aave_df = c_perp_position_change(
-        risk_asset=symbol, usd_asset="USDC", long_risk=True, leverage_multiplier=5
+        risk_asset=symbol, usd_asset="DAI", long_risk=True, leverage_multiplier=5
     )
     sum_df = (coinglass_aave_df[PRODUCT_LIST].iloc[1:-1]) * 100  # convert to percentage
 

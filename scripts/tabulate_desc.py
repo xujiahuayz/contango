@@ -3,7 +3,7 @@ from scripts.simluate import c_perp_position_change
 
 for symbol in SYMBOL_LIST:
     coinglass_aave_df = c_perp_position_change(
-        risk_asset=symbol, usd_asset="USDC", long_risk=True, leverage_multiplier=5
+        risk_asset=symbol, usd_asset="DAI", long_risk=True, leverage_multiplier=5
     )
     sum_df = (
         ((coinglass_aave_df[PRODUCT_LIST].iloc[1:-1]) * 100)  # convert to percentage
@@ -27,9 +27,9 @@ for symbol in SYMBOL_LIST:
     # replace contango with {\bf Contango}
     sum_df.rename(index={"Contango": "{\\bf Contango}"}, inplace=True)
 
-    # turn to latex table
+    # turn to latex table with toprule midrule bottomrule
     latex_table = f"\\renewcommand{{\\maxnum}}{{{max_std}}}\n" + sum_df.style.to_latex(
-        column_format="@{}l@{\hspace{3mm}}r*{6}{R{10mm}}r@{}"
+        column_format="@{}l@{\hspace{3mm}}r*{6}{R{10mm}}r@{}", hrules=True
     )
     #  save to file
     with open(TABLE_PATH / f"funding_rates_{symbol}.tex", "w") as f:
