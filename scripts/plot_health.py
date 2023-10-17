@@ -17,10 +17,10 @@ for symbol in SYMBOL_LIST:
     ax.axhline(y=1, color="k", linestyle="-", linewidth=0.4)
     # yaxis range from 0.5 to 5.5
     ax.set_ylim([0.3, 5.7])
-    ax2.set_ylim([-0.24, 0.24])
+    # ax2.set_ylim([-0.24, 0.24])
     # set ylabel
     ax.set_ylabel("Health factor")
-    ax2.set_ylabel("Log return")
+    ax2.set_ylabel("Price in USD")
     for i, leverage in enumerate([2, 5, 20]):
         for long_risk in [True, False]:
             df = c_perp_position_change(
@@ -48,7 +48,8 @@ for symbol in SYMBOL_LIST:
                 # plot price log return on ax2
                 ax2.plot(
                     df.index,
-                    df["price"].apply(np.log).diff(),
+                    df["price"],
+                    # .apply(np.log).diff(),
                     linewidth=0.5,
                     alpha=0.9,
                     color="k",
