@@ -1,4 +1,3 @@
-import numpy as np
 from perp.constants import FIGURE_PATH, SYMBOL_LIST
 from scripts.simluate import c_perp_position_change
 

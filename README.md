@@ -65,6 +65,7 @@ put your `COINGLASS_SECRET` in `.env`:
 
 ```
 COINGLASS_SECRET="abc123"
+KAIKO_API_KEY="abc123"
 ```
 
 ```

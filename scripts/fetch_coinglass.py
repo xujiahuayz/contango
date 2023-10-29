@@ -1,13 +1,10 @@
 import gzip
 import json
-import os
 
 import requests
 
 from perp.constants import COINGLASS_PATH, SYMBOL_LIST
-
-COINGLASS_SECRET = os.environ.get("COINGLASS_SECRET")
-
+from perp.settings import COINGLASS_SECRET
 
 COINGLASS_ENDPOINT = "https://open-api.coinglass.com/public/v2/funding_usd_history"
 headers = {
