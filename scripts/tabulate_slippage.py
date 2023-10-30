@@ -27,7 +27,7 @@ melted["buy_risk_asset"] = melted["buy_risk_asset"].map(
 
 
 # Pivot the table so that 'exchange' values become column names
-indices = ["risk_asset", "trade_size", "buy_risk_asset"]
+indices = ["risk_asset", "buy_risk_asset", "trade_size"]
 
 kaiko_pivoted = melted.pivot_table(
     index=indices,
@@ -45,29 +45,28 @@ uniswap_df = uniswap_df.rename(index={"WBTC": "BTC", "WETH": "ETH"})
 uniswap_df.columns = ["Uniswap"]
 
 # merge kaiko_pivoted and uniswap_df
-result = kaiko_pivoted.merge(uniswap_df, how="outer", left_index=True, right_index=True)
+result = kaiko_pivoted.merge(
+    uniswap_df, how="outer", left_index=True, right_index=True
+).sort_index(level=["buy_risk_asset", "trade_size"], ascending=[False, True])
 
 # make index trade_size with thousands separator and without decimal places
 result.index = result.index.set_levels(
-    result.index.levels[1].map(lambda x: "{:,}".format(x).replace(".0", "")),
-    level=1,
+    result.index.levels[2].map(lambda x: "{:,}".format(x).replace(".0", "")),
+    level=2,
 )
 
 
 # sort risk_asset by SYMBOL_LIST and display in percentage
 result = result.loc[SYMBOL_LIST] * 100
-# sort buy_risk_asset by True and False
-result = result.sort_index(level="buy_risk_asset", ascending=False)
-
 
 # rename index
-result.index.names = ["risk asset", "trade size ($)", "long risk"]
+result.index.names = ["risk asset", "long risk", "trade size ($)"]
 
-# save result to latex with exactly 2 decimal places, merge cells where possible
+# save result to latex with exactly 3 decimal places, merge cells where possible
 # replace NaN with -
 result.to_latex(
     TABLE_PATH / "slippage.tex",
-    float_format="{:0.2f}".format,
+    float_format="{:0.3f}".format,
     na_rep="---",
     multirow=True,
     multicolumn=True,
