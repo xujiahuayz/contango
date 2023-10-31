@@ -53,25 +53,6 @@ for symbol in SYMBOL_LIST:
                     alpha=0.9,
                     color="k",
                 )
-            # plot interest rate on ax2 on the y-axis on the right
-
-            # ax3.plot(
-            #     df.index,
-            #     df["liquidityRate"] * 100,
-            #     linewidth=1.5,
-            #     alpha=0.9,
-            #     color="C4",
-            #     linestyle="-" if long_risk else "--",
-            # )
-
-            # ax3.plot(
-            #     df.index,
-            #     df["variableBorrowRate"] * 100,
-            #     linewidth=1.5,
-            #     alpha=0.9,
-            #     color="C5",
-            #     linestyle="-" if long_risk else "--",
-            # )
 
     # Add a legend on top of the plot outside the frame without border
     ax.legend(ncol=3, loc="upper center", bbox_to_anchor=(0.5, 1.6), frameon=False)

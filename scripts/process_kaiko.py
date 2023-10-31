@@ -22,3 +22,7 @@ with gzip.open(KAIKO_SLIPPAGE_PATH, "rt") as f:
         kaiko_df = pd.concat(
             [kaiko_df, df], ignore_index=True
         )  # use pd.concat to combine dataframes
+
+# set 'ask_slippage' and 'bid_slippage' to numeric
+kaiko_df["ask_slippage"] = pd.to_numeric(kaiko_df["ask_slippage"])
+kaiko_df["bid_slippage"] = pd.to_numeric(kaiko_df["bid_slippage"])

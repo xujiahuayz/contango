@@ -6,6 +6,7 @@ import requests
 
 from perp.constants import (
     KAIKO_EXCHANGE_PATH,
+    KAIKO_EXCHANGES,
     KAIKO_SLIPPAGE_PATH,
     SYMBOL_LIST,
     TRADE_SIZE_LIST,
@@ -33,7 +34,7 @@ with gzip.open(KAIKO_SLIPPAGE_PATH, "wt") as f:
                 "sort": "asc",
             }
 
-            for e in ["Binance", "OkEX", "Huobi", "CoinEx"]:
+            for e in KAIKO_EXCHANGES:
                 e_code = exchange_df[exchange_df["name"] == e]["code"].values[0]
                 response = requests.get(
                     url=f"https://us.market-api.kaiko.io/v2/data/order_book_snapshots.latest/exchanges/{e_code}/spot/{symbol.lower()}-usdt/ob_aggregations/slippage",

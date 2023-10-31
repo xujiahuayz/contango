@@ -10,8 +10,6 @@ kaiko_snapshot = kaiko_df[
 ].reset_index(drop=True)
 
 # restructure kaiko_snapshot such that 'ask_slippage' and 'bid_slippage' are in the same column 'slippage' with 'buy_risk_asset' column, and 'exchange' values become column names
-
-
 melted = pd.melt(
     kaiko_snapshot,
     id_vars=["exchange", "risk_asset", "trade_size"],
@@ -39,9 +37,9 @@ kaiko_pivoted = melted.pivot_table(
 kaiko_pivoted = kaiko_pivoted.rename(columns={"OkEX": "OKX"})
 
 # change uniswap_df index to ["risk_asset", "trade_size", "buy_risk_asset"]
-uniswap_df = uniswap_df.set_index(indices)[["slippage"]]
+uniswap_df = uniswap_df.set_index(indices)
 # change WBTC to BTC and WETH to ETH, and change 'slippage' column name to 'uniswap'
-uniswap_df = uniswap_df.rename(index={"WBTC": "BTC", "WETH": "ETH"})
+uniswap_df = uniswap_df.rename(index={"WBTC": "BTC", "WETH": "ETH"})[["slippage"]]
 uniswap_df.columns = ["Uniswap"]
 
 # merge kaiko_pivoted and uniswap_df
@@ -50,17 +48,16 @@ result = kaiko_pivoted.merge(
 ).sort_index(level=["buy_risk_asset", "trade_size"], ascending=[False, True])
 
 # make index trade_size with thousands separator and without decimal places
-result.index = result.index.set_levels(
-    result.index.levels[2].map(lambda x: "{:,}".format(x).replace(".0", "")),
-    level=2,
+result.index = pd.MultiIndex.from_tuples(
+    [
+        (risk_asset, long_risk, "{:,}".format(trade_size).replace(".0", ""))
+        for risk_asset, long_risk, trade_size in result.index
+    ],
+    names=["risk asset", "long risk", "trade size ($)"],
 )
-
 
 # sort risk_asset by SYMBOL_LIST and display in percentage
 result = result.loc[SYMBOL_LIST] * 100
-
-# rename index
-result.index.names = ["risk asset", "long risk", "trade size ($)"]
 
 # save result to latex with exactly 3 decimal places, merge cells where possible
 # replace NaN with -
