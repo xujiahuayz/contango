@@ -20,8 +20,9 @@ for symbol in SYMBOL_LIST:
 
     plt.rcParams.update({"font.size": 20})
     # initiate the plot with dark gray background in the plot area
-    fig, ax = plt.subplots()
+    fig, (ax, ax1) = plt.subplots(2, 1, sharex=True)
     ax.axhline(y=0, color="k", linestyle="-", linewidth=0.4)
+    ax1.axhline(y=0, color="k", linestyle="-", linewidth=0.4)
     for i, product in enumerate(products):
         # add alpha with the same color
         ax.plot(
@@ -43,8 +44,18 @@ for symbol in SYMBOL_LIST:
             alpha=0.9,
         )
 
+        # plot cumulative sum of the funding rate in ax1
+        ax1.plot(
+            coinglass_aave_df.index,
+            coinglass_aave_df[product].cumsum(),
+            color=product_color[i],
+            label=product,
+            linewidth=1.5,
+            alpha=0.9,
+        )
+
     # Add a legend on top of the plot outside the frame without border
-    ax.legend(ncol=2, loc="upper center", bbox_to_anchor=(0.5, 1.3), frameon=False)
+    ax.legend(ncol=2, loc="upper center", bbox_to_anchor=(0.5, 1.6), frameon=False)
 
     # Format the x-axis to show only the month without year
     ax.xaxis.set_major_formatter(mdates.DateFormatter("%b"))

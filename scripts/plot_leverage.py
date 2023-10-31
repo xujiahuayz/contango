@@ -1,5 +1,6 @@
-from perp.constants import FIGURE_PATH, SYMBOL_LIST
+from perp.constants import FIGURE_PATH, SYMBOL_LIST, USD_STABLECOIN
 from scripts.simluate import c_perp_position_change
+from scripts.process_graph import interpolate_df
 
 import matplotlib.pyplot as plt
 import matplotlib.dates as mdates
@@ -7,22 +8,26 @@ import matplotlib.dates as mdates
 leverage_color = ["C0", "C1", "C2", "C3"]
 plt.rcParams.update({"font.size": 20})
 
+stable_util = interpolate_df(USD_STABLECOIN, "utilizationRate")
 
 for symbol in SYMBOL_LIST:
     # initiate the plot with 3 subplots that share the same x-axis
     fig, (ax, ax2, ax3) = plt.subplots(3, 1, sharex=True)
-
+    risk_asset = ("W" if symbol in ["BTC", "ETH"] else "") + symbol
+    risk_util = interpolate_df(risk_asset, "utilizationRate")
     ax.axhline(y=0, color="k", linestyle="-", linewidth=0.4)
     for i, leverage in enumerate([2, 5, 20]):
         for long_risk in [True, False]:
             df = c_perp_position_change(
                 risk_asset=symbol,
-                usd_asset="DAI",
+                usd_asset=USD_STABLECOIN,
                 long_risk=long_risk,
                 leverage_multiplier=leverage,
             )
 
             fr = (df["Contango"] * 100).rolling(7 * 3, center=True).mean()
+
+            ax.set_xlim([df.index[0], df.index[-1]])
 
             # plot with different line style for long and short
             ax.plot(
@@ -35,25 +40,40 @@ for symbol in SYMBOL_LIST:
                 linestyle="-" if long_risk else "--",
             )
 
-            ax_to_plot = ax2 if long_risk else ax3
-
-            ax_to_plot.plot(
+            ax2.plot(
                 df.index,
-                df["liquidityRate"],
+                df["liquidityRate"] if long_risk else df["variableBorrowRate"],
                 linewidth=1.5,
                 alpha=0.9,
                 color="C4",
             )
 
-            ax_to_plot.plot(
-                df.index,
-                df["variableBorrowRate"],
+            ax2.plot(
+                risk_util.index,
+                risk_util["utilizationRate"],
                 linewidth=1.5,
                 alpha=0.9,
                 color="C5",
             )
+
+            ax3.plot(
+                df.index,
+                df["variableBorrowRate"] if long_risk else df["liquidityRate"],
+                linewidth=1.5,
+                alpha=0.9,
+                color="C5",
+            )
+
+            ax3.plot(
+                stable_util.index,
+                stable_util["utilizationRate"],
+                linewidth=1.5,
+                alpha=0.9,
+                color="C5",
+            )
+
             # set y-axis range
-            ax_to_plot.set_ylim([0, 1.4])
+            # ax_to_plot.set_ylim([0, 1.4])
             # log y-axis
             # ax_to_plot.set_yscale("log")
 

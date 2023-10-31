@@ -20,7 +20,11 @@ with gzip.open(AAVE_V3_PARAM_PATH, "rt") as f:
 indices = ["timestamp", "reserve"]
 reservepara_df = (
     pd.DataFrame(reservepara_list).drop_duplicates(subset=indices).set_index(indices)
-)[["variableBorrowRate", "liquidityRate"]].astype(float) / 1e27
+)[["variableBorrowRate", "liquidityRate", "utilizationRate"]].astype(float)
+
+reservepara_df[["variableBorrowRate", "liquidityRate"]] = (
+    reservepara_df[["variableBorrowRate", "liquidityRate"]] / 1e27
+)
 
 
 reservepara_df = reservepara_df.reset_index("reserve")
@@ -28,17 +32,18 @@ reservepara_df = reservepara_df.reset_index("reserve")
 reservepara_df.index = pd.to_datetime(reservepara_df.index, unit="s")
 
 
-def aave_rates_df(risk_asset: str, usd_asset: str, long_risk: bool) -> pd.DataFrame:
-    def interpolate_df(asset_name: str, rate_name: str) -> pd.DataFrame:
-        df = reservepara_df[reservepara_df["reserve"] == asset_name][[rate_name]]
-        sampled_ts = df.resample("8H").asfreq()
-        return (
-            pd.concat([df, sampled_ts])
-            .sort_index()
-            .interpolate()
-            .merge(sampled_ts[[]], how="right", left_index=True, right_index=True)
-        )
+def interpolate_df(asset_name: str, col_name: str) -> pd.DataFrame:
+    df = reservepara_df[reservepara_df["reserve"] == asset_name][[col_name]]
+    sampled_ts = df.resample("8H").asfreq()
+    return (
+        pd.concat([df, sampled_ts])
+        .sort_index()
+        .interpolate()
+        .merge(sampled_ts[[]], how="right", left_index=True, right_index=True)
+    )
 
+
+def aave_rates_df(risk_asset: str, usd_asset: str, long_risk: bool) -> pd.DataFrame:
     rate_names = ["liquidityRate", "variableBorrowRate"]
     usd_df = interpolate_df(
         risk_asset, rate_names[long_risk]
