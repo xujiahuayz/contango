@@ -44,15 +44,14 @@ def interpolate_df(asset_name: str, col_name: str) -> pd.DataFrame:
 
 
 def aave_rates_df(risk_asset: str, usd_asset: str, long_risk: bool) -> pd.DataFrame:
-    rate_names = ["liquidityRate", "variableBorrowRate"]
-    usd_df = interpolate_df(
-        risk_asset, rate_names[long_risk]
-    )  # USD borrowed if long_risk
-    risk_df = interpolate_df(
-        usd_asset, rate_names[not long_risk]
-    )  # risk asset lent if long_risk
+    if long_risk:
+        borrow_rates = interpolate_df(usd_asset, "variableBorrowRate")
+        lend_rates = interpolate_df(risk_asset, "liquidityRate")
+    else:
+        borrow_rates = interpolate_df(risk_asset, "variableBorrowRate")
+        lend_rates = interpolate_df(usd_asset, "liquidityRate")
 
-    return pd.concat([usd_df, risk_df], axis=1).dropna()
+    return pd.concat([borrow_rates, lend_rates], axis=1).dropna()
 
 
 if __name__ == "__main__":
