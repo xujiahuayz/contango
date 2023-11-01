@@ -40,7 +40,7 @@ for risk_asset in kaiko_df["risk_asset"].unique():
                 marker="o",
                 color=colors[i],
                 alpha=0.5,
-                markersize=4,
+                markersize=3,
             )
             axs[j].plot(
                 df_new["bid_slippage"],
@@ -49,7 +49,7 @@ for risk_asset in kaiko_df["risk_asset"].unique():
                 marker="x",
                 color=colors[i],
                 alpha=0.8,
-                markersize=4,
+                markersize=3,
             )
             # log y-axis
             axs[j].set_ylim(y_min, y_max)

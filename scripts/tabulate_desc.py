@@ -1,9 +1,12 @@
-from perp.constants import PRODUCT_LIST, SYMBOL_LIST, TABLE_PATH
+from perp.constants import PRODUCT_LIST, SYMBOL_LIST, TABLE_PATH, USD_STABLECOIN
 from scripts.simluate import c_perp_position_change
 
 for symbol in SYMBOL_LIST:
     coinglass_aave_df = c_perp_position_change(
-        risk_asset=symbol, usd_asset="DAI", long_risk=True, leverage_multiplier=5
+        risk_asset=symbol,
+        usd_asset=USD_STABLECOIN,
+        long_risk=True,
+        leverage_multiplier=5,
     )
     sum_df = (
         ((coinglass_aave_df[PRODUCT_LIST].iloc[1:-1]) * 100)  # convert to percentage

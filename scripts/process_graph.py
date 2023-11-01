@@ -32,8 +32,8 @@ reservepara_df = reservepara_df.reset_index("reserve")
 reservepara_df.index = pd.to_datetime(reservepara_df.index, unit="s")
 
 
-def interpolate_df(asset_name: str, col_name: str) -> pd.DataFrame:
-    df = reservepara_df[reservepara_df["reserve"] == asset_name][[col_name]]
+def interpolate_df(asset_name: str, col_name: list[str]) -> pd.DataFrame:
+    df = reservepara_df[reservepara_df["reserve"] == asset_name][col_name]
     sampled_ts = df.resample("8H").asfreq()
     return (
         pd.concat([df, sampled_ts])
@@ -45,11 +45,11 @@ def interpolate_df(asset_name: str, col_name: str) -> pd.DataFrame:
 
 def aave_rates_df(risk_asset: str, usd_asset: str, long_risk: bool) -> pd.DataFrame:
     if long_risk:
-        borrow_rates = interpolate_df(usd_asset, "variableBorrowRate")
-        lend_rates = interpolate_df(risk_asset, "liquidityRate")
+        borrow_rates = interpolate_df(usd_asset, ["variableBorrowRate"])
+        lend_rates = interpolate_df(risk_asset, ["liquidityRate"])
     else:
-        borrow_rates = interpolate_df(risk_asset, "variableBorrowRate")
-        lend_rates = interpolate_df(usd_asset, "liquidityRate")
+        borrow_rates = interpolate_df(risk_asset, ["variableBorrowRate"])
+        lend_rates = interpolate_df(usd_asset, ["liquidityRate"])
 
     return pd.concat([borrow_rates, lend_rates], axis=1).dropna()
 

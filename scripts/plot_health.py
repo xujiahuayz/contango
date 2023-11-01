@@ -1,4 +1,4 @@
-from perp.constants import FIGURE_PATH, SYMBOL_LIST
+from perp.constants import FIGURE_PATH, SYMBOL_LIST, USD_STABLECOIN
 from scripts.simluate import c_perp_position_change
 
 import matplotlib.pyplot as plt
@@ -10,8 +10,6 @@ for symbol in SYMBOL_LIST:
     plt.rcParams.update({"font.size": 20})
     # initiate the plot with two subplots that share the same x-axis, for ax2, we need 2 y-axis, one on the left and one on the right
     fig, (ax, ax2) = plt.subplots(2, 1, sharex=True)
-    # ax3 = ax2.twinx()
-    # ax3.set_ylim([-2, 52])
 
     ax.axhline(y=1, color="k", linestyle="-", linewidth=0.4)
     # yaxis range from 0.5 to 5.5
@@ -24,7 +22,7 @@ for symbol in SYMBOL_LIST:
         for long_risk in [True, False]:
             df = c_perp_position_change(
                 risk_asset=symbol,
-                usd_asset="DAI",
+                usd_asset=USD_STABLECOIN,
                 long_risk=long_risk,
                 leverage_multiplier=leverage,
             )

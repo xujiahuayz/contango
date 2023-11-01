@@ -1,4 +1,4 @@
-from perp.constants import FIGURE_PATH, SYMBOL_LIST
+from perp.constants import FIGURE_PATH, SYMBOL_LIST, USD_STABLECOIN
 from scripts.simluate import c_perp_position_change
 
 import matplotlib.pyplot as plt
@@ -13,7 +13,10 @@ product_color = ["C0", "C1", "C2", "C3"]
 
 for symbol in SYMBOL_LIST:
     coinglass_aave_df = c_perp_position_change(
-        risk_asset=symbol, usd_asset="DAI", long_risk=True, leverage_multiplier=5
+        risk_asset=symbol,
+        usd_asset=USD_STABLECOIN,
+        long_risk=True,
+        leverage_multiplier=5,
     )
 
     coinglass_aave_df = coinglass_aave_df[products] * 100
