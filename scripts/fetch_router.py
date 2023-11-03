@@ -1,3 +1,4 @@
+import re
 import subprocess
 
 from perp.settings import PROJECT_ROOT
@@ -5,14 +6,19 @@ from perp.settings import PROJECT_ROOT
 cli_path = PROJECT_ROOT.parent / "smart-order-router"
 
 
-def run_command(tokenIn, tokenOut, amount, exactIn, recipient, protocols, blockNumber):
-    command = (
-        f"./bin/cli quote --tokenIn {tokenIn} --tokenOut {tokenOut} --amount {amount} "
-    )
-    if exactIn:
-        command += "--exactIn "
+def run_command(
+    token_in: str,
+    token_out: str,
+    amount: float,
+    exact_in: bool,
+    recipient: str,
+    protocols: str,
+    block_number: int,
+) -> str | None:
+    command = f"./bin/cli quote --tokenIn {token_in} --tokenOut {token_out} --amount {amount} "
+    command += "--exactIn " if exact_in else "--exactOut "
     command += (
-        f"--recipient {recipient} --protocols {protocols} --blockNumber {blockNumber}"
+        f"--recipient {recipient} --protocols {protocols} --blockNumber {block_number}"
     )
 
     process = subprocess.Popen(
@@ -32,21 +38,7 @@ def run_command(tokenIn, tokenOut, amount, exactIn, recipient, protocols, blockN
         return None
 
 
-output = run_command(
-    "0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48",
-    "0x1f9840a85d5af5bf1d1762f925bdaddc4201f984",
-    "1000",
-    True,
-    "0xAb5801a7D398351b8bE11C439e05C5B3259aeC9B",
-    "v2,v3",
-    "18485500",
-)
-
-
-import re
-
-
-def parse_output(output):
+def parse_output(output: str) -> dict[str, str]:
     # Remove ANSI color codes
     output = re.sub(r"\x1b\[\d+m", "", output)
 
@@ -72,6 +64,16 @@ def parse_output(output):
 
     return data
 
+
+output = run_command(
+    "0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48",
+    "0x1f9840a85d5af5bf1d1762f925bdaddc4201f984",
+    1000,
+    False,
+    "0xAb5801a7D398351b8bE11C439e05C5B3259aeC9B",
+    "v2,v3",
+    18485500,
+)
 
 if output is not None:
     data = parse_output(output)
