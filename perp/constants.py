@@ -17,6 +17,8 @@ AAVE_V3_PARAM_PATH = DATA_PATH / "reservepara_v3.jsonl.gz"
 KAIKO_EXCHANGE_PATH = DATA_PATH / "exchange_df.pkl"
 KAIKO_SLIPPAGE_PATH = DATA_PATH / "slippage.jsonl.gz"
 UNISWAP_PATH = DATA_PATH / "uniswap.jsonl.gz"
+TIME_BLOCK_PATH = DATA_PATH / "time_block.json"
+UNISWAP_TIME_SERIES_PATH = DATA_PATH / "uniswap_ts.jsonl.gz"
 
 USD_STABLECOIN = "DAI"
 
