@@ -1,4 +1,60 @@
-# out_put_list = []
+import re
+
+import numpy as np
+import pandas as pd
+from perp.constants import UNISWAP_TIME_SERIES_PATH
+import gzip
+import json
+
+
+def parse_output(output: str) -> dict:
+    # Remove ANSI color codes
+    output = re.sub(r"\x1b\[\d+m", "", output)
+
+    # Split the output into lines
+    lines = output.strip().split("\n")
+    if len(lines) <= 1:
+        return {"Best Route": lines[0]}
+
+    # Initialize an empty dictionary to store the parsed data
+    data = {}
+
+    # Initialize a variable to keep track of the current key
+    current_key = None
+
+    # Iterate over each line
+    for line in lines:
+        # Split the line into key and value
+        if ":" in line:
+            key, value = map(str.strip, line.split(":", 1))
+            data[key] = value.strip('\n"')
+            current_key = key
+        else:
+            # If the line does not contain a colon, it is a continuation of the previous line
+            data[current_key] += ("\n" + line.strip()).strip('\n"')
+
+    return data
+
+
+quotes = []
+with gzip.open("/Users/jx/projects/contango/data/uniswap_ts_old.jsonl.gz", "rt") as f:
+    for line in f:
+        result = json.loads(line)
+        output = parse_output(output=result["output"])
+
+        result.update(
+            {
+                "quote": output["Raw Quote Exact In"]
+                if "Raw Quote Exact In" in output
+                else np.nan
+            }
+        )
+        quotes.append(result)
+
+uniswap_df = pd.DataFrame(quotes)
+
+uniswap_df["quote"]
+#  out_put_list = []
 # for key, value in time_block_dict.items():
 #     for risk_asset in SYMBOL_LIST:
 #         risk_asset = ("W" if risk_asset in ["ETH", "BTC"] else "") + risk_asset
@@ -26,33 +82,6 @@
 #                     "output": output,
 #                 }
 #                 out_put_list.append(this_dict)
-
-
-# # def parse_output(output: str) -> dict:
-# #     # Remove ANSI color codes
-# #     output = re.sub(r"\x1b\[\d+m", "", output)
-
-# #     # Split the output into lines
-# #     lines = output.strip().split("\n")
-
-# #     # Initialize an empty dictionary to store the parsed data
-# #     data = {}
-
-# #     # Initialize a variable to keep track of the current key
-# #     current_key = None
-
-# #     # Iterate over each line
-# #     for line in lines:
-# #         # Split the line into key and value
-# #         if ":" in line:
-# #             key, value = map(str.strip, line.split(":", 1))
-# #             data[key] = value.strip('\n"')
-# #             current_key = key
-# #         else:
-# #             # If the line does not contain a colon, it is a continuation of the previous line
-# #             data[current_key] += ("\n" + line.strip()).strip('\n"')
-
-# #     return data
 
 
 # # # create an aync function to combine run_command and parse_output, and save data to json
