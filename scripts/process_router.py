@@ -1,10 +1,11 @@
+import gzip
+import json
 import re
 
 import numpy as np
 import pandas as pd
+
 from perp.constants import UNISWAP_TIME_SERIES_PATH
-import gzip
-import json
 
 
 def parse_output(output: str) -> dict:
@@ -49,12 +50,12 @@ with gzip.open(UNISWAP_TIME_SERIES_PATH, "rt") as f:
                 "raw_quote": float(output["Raw Quote Exact In"])
                 if "Raw Quote Exact In" in output
                 else np.nan,
-                "gas_quote": float(output["Gas Used Quote Token"])
-                if "Gas Used Quote Token" in output
-                else np.nan,
-                "gas_adjusted_quote": float(output["Gas Adjusted Quote In"])
-                if "Gas Adjusted Quote In" in output
-                else np.nan,
+                # "gas_quote": float(output["Gas Used Quote Token"])
+                # if "Gas Used Quote Token" in output
+                # else np.nan,
+                # "gas_adjusted_quote": float(output["Gas Adjusted Quote In"])
+                # if "Gas Adjusted Quote In" in output
+                # else np.nan,
                 "output": output,
             }
         )
@@ -62,10 +63,10 @@ with gzip.open(UNISWAP_TIME_SERIES_PATH, "rt") as f:
 
 uniswap_df = pd.DataFrame(quotes)
 uniswap_df["quote_price"] = uniswap_df["raw_quote"] / uniswap_df["trade_size"]
-uniswap_df["gas_adjusted_price"] = (
-    uniswap_df["raw_quote"]
-    + uniswap_df["gas_quote"] * (-1) ** uniswap_df["buy_risk_asset"]
-) / uniswap_df["trade_size"]
+# uniswap_df["gas_adjusted_price"] = (
+#     uniswap_df["raw_quote"]
+#     + uniswap_df["gas_quote"] * (-1) ** uniswap_df["buy_risk_asset"]
+# ) / uniswap_df["trade_size"]
 
 # turn timestamp into int
 uniswap_df["timestamp"] = uniswap_df["timestamp"].astype(int)
