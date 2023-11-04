@@ -92,11 +92,6 @@ uniswap_df["slippage_starting_price"] = np.where(
     np.minimum(uniswap_df["mid_price"], uniswap_df["best_sell"]),
 )
 
-# #  get mid price
-# mid_price = (best_buy + best_sell) / 2
-# uniswap_df["mid_price"] = uniswap_df.set_index(["timestamp", "risk_asset"]).index.map(
-#     mid_price
-# )
 
 uniswap_df["slippage_unadjusted"] = (
     (uniswap_df["quote_price"] - uniswap_df["mid_price"])

@@ -70,8 +70,7 @@ for risk_asset in slippage_df["risk_asset"].unique():
             # Set locator for x-axis to show fewer dates
             locator = mdates.DayLocator(interval=7)  # Show date every 3 days
             axs[j].xaxis.set_major_locator(locator)
-        # change OkEX to OKX
-        # axs[j].set_title(exchange.replace("OkEX", "OKX"))
+        axs[j].set_title(exchange)
     # add a common legend horizontally centered above the subplots with one row
     fig.legend(loc="upper center", bbox_to_anchor=(0.5, 1.2), ncol=3)
     # save to pdf
