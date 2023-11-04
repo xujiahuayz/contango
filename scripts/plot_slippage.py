@@ -74,4 +74,4 @@ for risk_asset in slippage_df["risk_asset"].unique():
     # add a common legend horizontally centered above the subplots with one row
     fig.legend(loc="upper center", bbox_to_anchor=(0.5, 1.2), ncol=3)
     # save to pdf
-    fig.savefig(FIGURE_PATH / f"slippage_{risk_asset}.pdf", bbox_inches="tight")
+    fig.savefig(str(FIGURE_PATH / f"slippage_{risk_asset}.pdf"), bbox_inches="tight")

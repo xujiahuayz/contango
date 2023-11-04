@@ -85,18 +85,11 @@ uniswap_df["best_sell"] = uniswap_df.set_index(indices).index.map(best_sell)
 uniswap_df["mid_price"] = (uniswap_df["best_buy"] + uniswap_df["best_sell"]) / 2
 
 # "slippage_starting_price" is the highest of the two: "mid_price" and 'best_buy' if buy_risk_asset is True
-#  and the lowest of the tow: "mid_price" and 'best_sell' if buy_risk_asset is False
+#  and the lowest of the two: "mid_price" and 'best_sell' if buy_risk_asset is False
 uniswap_df["slippage_starting_price"] = np.where(
     uniswap_df["buy_risk_asset"],
     np.maximum(uniswap_df["mid_price"], uniswap_df["best_buy"]),
     np.minimum(uniswap_df["mid_price"], uniswap_df["best_sell"]),
-)
-
-
-uniswap_df["slippage_unadjusted"] = (
-    (uniswap_df["quote_price"] - uniswap_df["mid_price"])
-    / uniswap_df["mid_price"]
-    * (-1) ** uniswap_df["buy_risk_asset"]
 )
 
 uniswap_df["slippage"] = (
