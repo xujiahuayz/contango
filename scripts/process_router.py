@@ -46,11 +46,66 @@ with gzip.open(UNISWAP_TIME_SERIES_PATH, "rt") as f:
 
         result.update(
             {
-                "quote": output["Raw Quote Exact In"]
+                "raw_quote": float(output["Raw Quote Exact In"])
                 if "Raw Quote Exact In" in output
-                else np.nan
+                else np.nan,
+                "gas_quote": float(output["Gas Used Quote Token"])
+                if "Gas Used Quote Token" in output
+                else np.nan,
+                "gas_adjusted_quote": float(output["Gas Adjusted Quote In"])
+                if "Gas Adjusted Quote In" in output
+                else np.nan,
+                "output": output,
             }
         )
         quotes.append(result)
 
 uniswap_df = pd.DataFrame(quotes)
+uniswap_df["quote_price"] = uniswap_df["raw_quote"] / uniswap_df["trade_size"]
+uniswap_df["gas_adjusted_price"] = (
+    uniswap_df["raw_quote"]
+    + uniswap_df["gas_quote"] * (-1) ** uniswap_df["buy_risk_asset"]
+) / uniswap_df["trade_size"]
+
+# turn timestamp into int
+uniswap_df["timestamp"] = uniswap_df["timestamp"].astype(int)
+indices = ["timestamp", "risk_asset"]
+#  get highest quote_price for each risk_asset at each timestamp if buy_risk_asset is True
+best_buy = (
+    uniswap_df[uniswap_df["buy_risk_asset"]].groupby(indices).max()["quote_price"]
+)
+
+#  get lowest quote_price for each risk_asset at each timestamp if buy_risk_asset is False
+best_sell = (
+    uniswap_df[~uniswap_df["buy_risk_asset"]].groupby(indices).min()["quote_price"]
+)
+
+uniswap_df["best_buy"] = uniswap_df.set_index(indices).index.map(best_buy)
+uniswap_df["best_sell"] = uniswap_df.set_index(indices).index.map(best_sell)
+uniswap_df["mid_price"] = (uniswap_df["best_buy"] + uniswap_df["best_sell"]) / 2
+
+# "slippage_starting_price" is the highest of the two: "mid_price" and 'best_buy' if buy_risk_asset is True
+#  and the lowest of the tow: "mid_price" and 'best_sell' if buy_risk_asset is False
+uniswap_df["slippage_starting_price"] = np.where(
+    uniswap_df["buy_risk_asset"],
+    np.maximum(uniswap_df["mid_price"], uniswap_df["best_buy"]),
+    np.minimum(uniswap_df["mid_price"], uniswap_df["best_sell"]),
+)
+
+# #  get mid price
+# mid_price = (best_buy + best_sell) / 2
+# uniswap_df["mid_price"] = uniswap_df.set_index(["timestamp", "risk_asset"]).index.map(
+#     mid_price
+# )
+
+uniswap_df["slippage_unadjusted"] = (
+    (uniswap_df["quote_price"] - uniswap_df["mid_price"])
+    / uniswap_df["mid_price"]
+    * (-1) ** uniswap_df["buy_risk_asset"]
+)
+
+uniswap_df["slippage"] = (
+    (uniswap_df["quote_price"] - uniswap_df["slippage_starting_price"])
+    / uniswap_df["slippage_starting_price"]
+    * (-1) ** uniswap_df["buy_risk_asset"]
+)

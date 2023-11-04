@@ -2,10 +2,6 @@ import gzip
 import json
 from perp.constants import (
     UNISWAP_PATH,
-    SYMBOL_LIST,
-    USD_STABLECOIN,
-    TOKEN_DICT,
-    TRADE_SIZE_LIST,
 )
 import pandas as pd
 
