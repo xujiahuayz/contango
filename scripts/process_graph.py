@@ -20,7 +20,17 @@ with gzip.open(AAVE_V3_PARAM_PATH, "rt") as f:
 indices = ["timestamp", "reserve"]
 reservepara_df = (
     pd.DataFrame(reservepara_list).drop_duplicates(subset=indices).set_index(indices)
-)[["variableBorrowRate", "liquidityRate", "utilizationRate"]].astype(float)
+)[
+    [
+        "variableBorrowRate",
+        "liquidityRate",
+        "utilizationRate",
+        "totalATokenSupply",
+        "totalCurrentVariableDebt",
+    ]
+].astype(
+    float
+)
 
 reservepara_df[["variableBorrowRate", "liquidityRate"]] = (
     reservepara_df[["variableBorrowRate", "liquidityRate"]] / 1e27

@@ -4,7 +4,7 @@ import json
 from perp.constants import AAVE_V3_PARAM_PATH
 from perp.graphql import graphdata, query_structurer
 
-BATCH_SIZE = 1000
+BATCH_SIZE = 1_000
 # check documentation: https://thegraph.com/hosted-service/subgraph/aave/protocol-v3
 AAVE_V3_ENDPOINT = "https://api.thegraph.com/subgraphs/name/aave/protocol-v3"
 
@@ -13,6 +13,7 @@ specs = """
     id
     reserve{
       symbol
+      decimals
     }
     variableBorrowRate
     variableBorrowIndex
@@ -21,10 +22,14 @@ specs = """
     averageStableBorrowRate
     liquidityIndex
     liquidityRate
-    totalLiquidity
-    totalLiquidityAsCollateral
     availableLiquidity
     timestamp
+    totalATokenSupply
+    totalCurrentVariableDebt
+    totalLiquidity
+    totalLiquidityAsCollateral
+    totalPrincipalStableDebt
+    totalScaledVariableDebt
 """
 
 last_id = ""
