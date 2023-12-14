@@ -125,18 +125,31 @@ def c_perp_position_change(
 
         env.accrue_interest()
 
-    # rolling diff of cperp_value
-    df["cperp_value_diff"] = df["cperp_value"].diff()
+    # # rolling diff of cperp_value
+    # df["cperp_value_diff"] = df["cperp_value"].diff()
 
-    df["cperp_principal_value_change"] = df["cperp_principal"].shift(1) * df[
-        "price"
-    ].diff(1)
+    # df["cperp_principal_value_change"] = df["cperp_principal"].shift(1) * df[
+    #     "price"
+    # ].diff(1)
 
-    df["cperp_funding_payment"] = (
-        df["cperp_value_diff"] - df["cperp_principal_value_change"]
-    ) * (-1) ** long_risk
+    # df["cperp_funding_payment"] = (
+    #     df["cperp_value_diff"] - df["cperp_principal_value_change"]
+    # ) * (-1) ** long_risk
 
-    df["Contango"] = df["cperp_funding_payment"] / (df["price"] * df["cperp_principal"])
+    # df["Contango"] = df["cperp_funding_payment"] / (df["price"] * df["cperp_principal"])
+
+    # cperp value change as pnl
+    df["pnl"] = df["cperp_value"] - df["cperp_value"][0]
+    # price change as trading gain
+    df["trading_gain"] = df["price"] - df["price"][0]
+    df["implied_funding_payment"] = df["trading_gain"] - df["pnl"]
+    df["cperp_funding_payment"] = df["implied_funding_payment"].diff() * (
+        1 if long_risk else -1
+    )
+    df["Contango"] = df["cperp_funding_payment"] / (
+        df["price"]
+        * cperp1.target_quantity  # just assume the principal is always the initial quantity
+    )
 
     return df
 

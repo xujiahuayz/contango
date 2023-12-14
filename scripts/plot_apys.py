@@ -44,9 +44,7 @@ for symbol in SYMBOL_LIST:
     for ax in [ax1, ax2]:
         ax.set_xlim([-0.01, 0.57])
         current_ticks = ax.get_xticks()
-        ax.set_xticklabels(
-            [f"{inverse_log1p(tick):.2f}" for tick in current_ticks if tick >= 0]
-        )
+        ax.set_xticklabels([f"{inverse_log1p(tick):.2f}" for tick in current_ticks])
 
     # Setting axis labels
     ax1.set_xlabel("Borrow APY")
@@ -56,7 +54,7 @@ for symbol in SYMBOL_LIST:
     ax2.set_ylabel("Total Deposit")
 
     # Optional: Save the figure
-    plt.savefig(FIGURE_PATH / f"apys_{risk_asset}.pdf")
+    plt.savefig(FIGURE_PATH / f"apys_{symbol}.pdf")
 
     # Show the plot
     plt.show()
