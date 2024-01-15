@@ -34,7 +34,7 @@ for symbol in SYMBOL_LIST:
     sum_df["std"] = sum_df["std"].apply(lambda x: f"\databar{{{x:.4f}}}")
 
     # replace contango with {\bf Contango}
-    sum_df.rename(index={"Contango": "{\\bf " + CONTANGO_NAME + "}"}, inplace=True)
+    sum_df.rename(index={CONTANGO_NAME: "{\\bf " + CONTANGO_NAME + "}"}, inplace=True)
 
     # turn to latex table with toprule midrule bottomrule
     latex_table = f"\\renewcommand{{\\maxnum}}{{{max_std}}}\n" + sum_df.style.to_latex(
