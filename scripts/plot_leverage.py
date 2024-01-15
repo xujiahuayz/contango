@@ -1,9 +1,9 @@
-from perp.constants import FIGURE_PATH, SYMBOL_LIST, USD_STABLECOIN
-from scripts.simluate import c_perp_position_change
-from scripts.process_graph import interpolate_df
-
-import matplotlib.pyplot as plt
 import matplotlib.dates as mdates
+import matplotlib.pyplot as plt
+
+from perp.constants import CONTANGO_NAME, FIGURE_PATH, SYMBOL_LIST, USD_STABLECOIN
+from scripts.process_graph import interpolate_df
+from scripts.simluate import c_perp_position_change
 
 leverage_color = ["C0", "C1", "C2", "C3"]
 plt.rcParams.update({"font.size": 20})
@@ -27,7 +27,7 @@ for symbol in SYMBOL_LIST:
                 leverage_multiplier=leverage,
             )
 
-            fr = (df["Contango"] * 100).rolling(7 * 3, center=True).mean()
+            fr = (df[CONTANGO_NAME] * 100).rolling(7 * 3, center=True).mean()
 
             ax.set_xlim([df.index[0], df.index[-1]])
 

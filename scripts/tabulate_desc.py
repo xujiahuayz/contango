@@ -1,4 +1,10 @@
-from perp.constants import PRODUCT_LIST, SYMBOL_LIST, TABLE_PATH, USD_STABLECOIN
+from perp.constants import (
+    CONTANGO_NAME,
+    PRODUCT_LIST,
+    SYMBOL_LIST,
+    TABLE_PATH,
+    USD_STABLECOIN,
+)
 from scripts.simluate import c_perp_position_change
 
 for symbol in SYMBOL_LIST:
@@ -28,7 +34,7 @@ for symbol in SYMBOL_LIST:
     sum_df["std"] = sum_df["std"].apply(lambda x: f"\databar{{{x:.4f}}}")
 
     # replace contango with {\bf Contango}
-    sum_df.rename(index={"Contango": "{\\bf Contango}"}, inplace=True)
+    sum_df.rename(index={"Contango": "{\\bf " + CONTANGO_NAME + "}"}, inplace=True)
 
     # turn to latex table with toprule midrule bottomrule
     latex_table = f"\\renewcommand{{\\maxnum}}{{{max_std}}}\n" + sum_df.style.to_latex(

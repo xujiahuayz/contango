@@ -1,6 +1,12 @@
 from matplotlib.colors import LinearSegmentedColormap
 
-from perp.constants import PRODUCT_LIST, SYMBOL_LIST, TABLE_PATH, USD_STABLECOIN
+from perp.constants import (
+    CONTANGO_NAME,
+    PRODUCT_LIST,
+    SYMBOL_LIST,
+    TABLE_PATH,
+    USD_STABLECOIN,
+)
 from scripts.simluate import c_perp_position_change
 
 # define for background_gradient the cmap argument (type Colormap) that is light red for 1 and light blue for -1 and white for 0
@@ -29,6 +35,6 @@ for symbol in SYMBOL_LIST:
     # save corr_with_color to latex and preserve the color
     corr_latex = corr_with_color.to_latex(
         convert_css=True, column_format="@{}l*{9}{R{9.8mm}}@{}"
-    ).replace("Contango", "{\\bf Contango}")
+    ).replace(CONTANGO_NAME, "{\\bf " + CONTANGO_NAME + "}")
     with open(TABLE_PATH / f"corr_{symbol}.tex", "w") as f:
         f.write(corr_latex)

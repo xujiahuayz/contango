@@ -1,10 +1,10 @@
-from perp.constants import FIGURE_PATH, SYMBOL_LIST, USD_STABLECOIN
+import matplotlib.dates as mdates
+import matplotlib.pyplot as plt
+
+from perp.constants import CONTANGO_NAME, FIGURE_PATH, SYMBOL_LIST, USD_STABLECOIN
 from scripts.simluate import c_perp_position_change
 
-import matplotlib.pyplot as plt
-import matplotlib.dates as mdates
-
-products = ["dYdX", "Huobi", "Binance", "Contango"]
+products = ["dYdX", "Huobi", "Binance", CONTANGO_NAME]
 # set plot color with python default color
 product_color = ["C0", "C1", "C2", "C3"]
 

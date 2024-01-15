@@ -39,6 +39,8 @@ SYMBOL_LIST = [
     # "RPL",
 ]
 
+CONTANGO_NAME = "DeFi Loan"
+
 PRODUCT_LIST = [
     # "Bitmex",
     "Binance",
@@ -50,7 +52,7 @@ PRODUCT_LIST = [
     "dYdX",
     "CoinEx",
     # "BingX",
-    "Contango",
+    CONTANGO_NAME,
 ]
 
 KAIKO_EXCHANGES = ["Binance", "Huobi", "OkEX", "CoinEx"]

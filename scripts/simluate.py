@@ -2,7 +2,7 @@ import numpy as np
 import pandas as pd
 from matplotlib import pyplot as plt
 
-from perp.constants import DATA_PATH
+from perp.constants import CONTANGO_NAME, DATA_PATH
 from perp.env import DefiEnv, PlfPool, User, cPerp, cPool
 from perp.utils import PriceDict
 from scripts.process_coinglass import coinglass_fr_df
@@ -136,7 +136,7 @@ def c_perp_position_change(
     #     df["cperp_value_diff"] - df["cperp_principal_value_change"]
     # ) * (-1) ** long_risk
 
-    # df["Contango"] = df["cperp_funding_payment"] / (df["price"] * df["cperp_principal"])
+    # df[CONTANGO_NAME] = df["cperp_funding_payment"] / (df["price"] * df["cperp_principal"])
 
     # cperp value change as pnl
     df["pnl"] = df["cperp_value"] - df["cperp_value"][0]
@@ -146,7 +146,7 @@ def c_perp_position_change(
     df["cperp_funding_payment"] = df["implied_funding_payment"].diff() * (
         1 if long_risk else -1
     )
-    df["Contango"] = df["cperp_funding_payment"] / (
+    df[CONTANGO_NAME] = df["cperp_funding_payment"] / (
         df["price"]
         * cperp1.target_quantity  # just assume the principal is always the initial quantity
     )
@@ -162,7 +162,7 @@ if __name__ == "__main__":
     plt.plot(coinglass_aave_df["OKX"], label="OKX")
 
     plt.plot(coinglass_aave_df["dYdX"], label="dYdX")
-    plt.plot(coinglass_aave_df["Contango"], label="Contango")
+    plt.plot(coinglass_aave_df[CONTANGO_NAME], label=CONTANGO_NAME)
     plt.legend()
 
     coinglass_aave_df.to_excel(DATA_PATH / "coinglass_aave_df.xlsx")
