@@ -2,7 +2,7 @@
 from https://github.com/simtopia/leveraged-trading-lending-platforms-app/blob/main/app_lending_vs_perp_with_correlation.py
 """
 
-from typing import Tuple
+# from typing import Tuple
 
 import numpy as np
 import pandas as pd
@@ -16,15 +16,12 @@ from plotly.subplots import make_subplots
 pio.templates.default = "plotly"
 
 
-# if not os.path.exists("results"):
-#     os.makedirs("results")
-
-
-# @st.cache_data  # -- Magic command to cache data
 def get_gbm(
     mu: float, sigma: float, dt: float, n_steps: int, p0: float, seed: int, n_mc: int
-) -> np.array:
-    """Get gbm paths"""
+) -> np.ndarray:
+    """
+    Get gbm price paths for n_steps steps and n_mc simulations
+    """
     rng = np.random.default_rng(seed)
     z = rng.normal(size=(n_mc, n_steps))
 
@@ -36,30 +33,32 @@ def get_gbm(
     return paths
 
 
-def sigmoid(x: float | np.array) -> float | np.array:
-    return 1 / (1 + np.exp(-x))
+def sigmoid(nu: float | np.ndarray) -> float | np.ndarray:
+    """
+    map mu to utilisation
+    """
+    return 1 / (1 + np.exp(-nu))
 
 
-def reciprocal_sigmoid(x: float | np.array) -> float | np.array:
-    return np.log(x / (1 - x))
+def reciprocal_sigmoid(u: float | np.ndarray) -> float | np.ndarray:
+    """
+    map utilisation to mu
+    """
+    return np.log(u / (1 - u))
 
 
 def get_utilisation(
-    price_paths: np.array,
+    price_paths: np.ndarray,
     u0: float,
     a: float,
-    b: float = 0,
-) -> np.array:
-    latent_u = np.zeros_like(price_paths)
+) -> np.ndarray:
     norm_price_paths = (price_paths - price_paths.mean()) / price_paths.std()
-    latent_u[:, 0] = reciprocal_sigmoid(u0)
 
-    for i in range(1, latent_u.shape[1]):
-        delta_P = norm_price_paths[:, i] - norm_price_paths[:, i - 1]
-        latent_u[:, i] = latent_u[:, i - 1] + (a + b * latent_u[:, i - 1]) * delta_P
+    latent_u = a * (
+        norm_price_paths - norm_price_paths[:, 0].reshape(-1, 1)
+    ) + reciprocal_sigmoid(u0)
 
-    u = sigmoid(latent_u)
-    return u
+    return sigmoid(latent_u)
 
 
 def irm(
@@ -70,10 +69,15 @@ def irm(
     utilisation: float,
     collateral: bool,
 ) -> float:
-    if utilisation < u_optimal:
-        r = r_0 + r_1 * utilisation / u_optimal
-    else:
-        r = r_0 + r_1 + r_2 * (utilisation - u_optimal) / (1 - u_optimal)
+    """
+    Interest rate model
+    """
+    r = r_0 + (
+        r_1 * utilisation / u_optimal
+        if utilisation < u_optimal
+        else r_1 + r_2 * (utilisation - u_optimal) / (1 - u_optimal)
+    )
+
     if collateral:
         return utilisation * r
     else:
@@ -657,40 +661,40 @@ with col2:
     alpha_dai = st.slider("$\\alpha^{DAI}$", -1.0, 1.0, 0.05, step=0.01)
     u0_dai = st.slider("$u_0^{DAI}$", 0.0, 1.0, 0.4, step=0.01)
 
-u_eth = get_utilisation(price_paths=price_paths, u0=u0_eth, a=alpha_eth)
-u_dai = get_utilisation(price_paths=price_paths, u0=u0_dai, a=alpha_dai)
+# u_eth = get_utilisation(price_paths=price_paths, u0=u0_eth, a=alpha_eth)
+# u_dai = get_utilisation(price_paths=price_paths, u0=u0_dai, a=alpha_dai)
 
 # Create figure with secondary y-axis
-_, col, _ = st.columns([0.1, 0.8, 0.1])
-with col:
-    fig = make_subplots(specs=[[{"secondary_y": True}]])
+# _, col, _ = st.columns([0.1, 0.8, 0.1])
+# with col:
+#     fig = make_subplots(specs=[[{"secondary_y": True}]])
 
-    fig.add_trace(
-        go.Scatter(
-            x=time,
-            y=price_paths[seed_, :],
-            name="ETH price",
-        ),
-        secondary_y=False,
-    )
-    fig.add_trace(
-        go.Scatter(x=time, y=u_eth[seed_, :], name="ETH pool utilisation"),
-        secondary_y=True,
-    )
-    fig.add_trace(
-        go.Scatter(x=time, y=u_dai[seed_, :], name="DAI pool utilisation"),
-        secondary_y=True,
-    )
+#     fig.add_trace(
+#         go.Scatter(
+#             x=time,
+#             y=price_paths[seed_, :],
+#             name="ETH price",
+#         ),
+#         secondary_y=False,
+#     )
+#     fig.add_trace(
+#         go.Scatter(x=time, y=u_eth[seed_, :], name="ETH pool utilisation"),
+#         secondary_y=True,
+#     )
+#     fig.add_trace(
+#         go.Scatter(x=time, y=u_dai[seed_, :], name="DAI pool utilisation"),
+#         secondary_y=True,
+#     )
 
-    # Set x-axis title
-    fig.update_xaxes(title_text="time")
+#     # Set x-axis title
+#     fig.update_xaxes(title_text="time")
 
-    # Set y-axes titles
-    fig.update_yaxes(title_text="pool utilisation", secondary_y=True)
-    fig.update_yaxes(title_text="ETH-USD price", secondary_y=False)
-    # fig.write_image(f"results/price_utilisation_mu{mu}_sigma{sigma}.png")
+#     # Set y-axes titles
+#     fig.update_yaxes(title_text="pool utilisation", secondary_y=True)
+#     fig.update_yaxes(title_text="ETH-USD price", secondary_y=False)
+#     # fig.write_image(f"results/price_utilisation_mu{mu}_sigma{sigma}.png")
 
-    st.plotly_chart(fig, use_container_width=True)
+#     st.plotly_chart(fig, use_container_width=True)
 
 
 # --------------------------
