@@ -1,63 +1,70 @@
+# # plot e^X where X~N(0,1)
+
+# import numpy as np
+# import matplotlib.pyplot as plt
+
+# X = np.random.randn(100_000)
+# Y = np.exp(X)
+
+# plt.hist(Y, bins=1000, color="c", edgecolor="black")
+# plt.xlim(0, 10)
+
+# from typing import Tuple
+
 import numpy as np
-import pandas as pd
 
 
 def get_gbm(
-    mu: float, sigma: float, dt: float, n_steps: int, p0: float, seed: int, n_mc: int
-) -> np.ndarray:
+    mu: float, sigma: float, dt: float, n_steps: int, p0: float, seed: int, n_mc
+) -> np.array:
     """Get gbm paths"""
     rng = np.random.default_rng(seed)
     z = rng.normal(size=(n_mc, n_steps))
-    normalized_path = (
-        np.exp((mu - 0.5 * sigma**2) * dt + sigma * np.sqrt(dt) * z)
-    ).cumprod(axis=1)
-    paths = np.insert(normalized_path, 0, 1, axis=1) * p0
+
+    paths = np.ones((n_mc, n_steps + 1)) * p0
+    paths[:, 1:] = np.exp((mu - 0.5 * sigma**2) * dt + sigma * np.sqrt(dt) * z)
+    paths = paths.cumprod(axis=1)
     return paths
 
 
-def sigmoid(nu: float | np.ndarray) -> float | np.ndarray:
-    """
-    map mu to utilisation
-    """
-    return 1 / (1 + np.exp(-nu))
+def sigmoid(x: np.array):
+    return 1 / (1 + np.exp(-x))
 
 
-def reciprocal_sigmoid(u: float | np.ndarray) -> float | np.ndarray:
-    """
-    map utilisation to mu
-    """
-    return np.log(u / (1 - u))
+def reciprocal_sigmoid(x: np.array):
+    return np.log(x / (1 - x))
 
 
-def get_utilisation(u0: float, a: float, price_paths: np.ndarray) -> np.ndarray:
-
-    # TODO: check if we need to normalize the price paths
+def get_utilisation(
+    price_paths: np.array,
+    u0: float,
+    a: float,
+    b: float = 0,
+) -> np.array:
+    latent_u = np.zeros_like(price_paths)
     norm_price_paths = (price_paths - price_paths.mean()) / price_paths.std()
+    latent_u[:, 0] = reciprocal_sigmoid(u0)
 
-    latent_u = a * (
-        norm_price_paths - norm_price_paths[:, 0].reshape(-1, 1)
-    ) + reciprocal_sigmoid(u0)
+    for i in range(1, latent_u.shape[1]):
+        delta_P = norm_price_paths[:, i] - norm_price_paths[:, i - 1]
+        latent_u[:, i] = latent_u[:, i - 1] + (a + b * latent_u[:, i - 1]) * delta_P
 
-    return sigmoid(latent_u)
+    u = sigmoid(latent_u)
+    return u
 
 
 def irm(
-    utilisation: float,
     u_optimal: float,
     r_0: float,
     r_1: float,
     r_2: float,
+    utilisation: float,
     collateral: bool,
 ) -> float:
-    """
-    Interest rate model
-    """
-    r = r_0 + (
-        r_1 * utilisation / u_optimal
-        if utilisation < u_optimal
-        else r_1 + r_2 * (utilisation - u_optimal) / (1 - u_optimal)
-    )
-
+    if utilisation < u_optimal:
+        r = r_0 + r_1 * utilisation / u_optimal
+    else:
+        r = r_0 + r_1 + r_2 * (utilisation - u_optimal) / (1 - u_optimal)
     if collateral:
         return utilisation * r
     else:
@@ -67,117 +74,115 @@ def irm(
 vect_irm = np.vectorize(irm, excluded=("u_optimal", "r_0", "r_1", "r_2", "collateral"))
 
 
-class SimulationEnv:
-    def __init__(
-        self,
-        mu: float = 0.0,
-        sigma: float = 0.1,
-        alpha_eth: float = -0.15,
-        alpha_dai: float = 0.05,
-        u0_eth: float = 0.4,
-        u0_dai: float = 0.4,
-        r_0: float = 0.0,
-        r_1: float = 0.04,
-        r_2: float = 2.5,
-        # r: float = 0.05, # maintenance margin?
-        u_optimal: float = 0.45,
-        lt: float = 0.85,
-        ltv0: float = 0.75,
-        p0: float = 2_000,
-        dt: float = 0.01,
-        n_steps: int = 100,
-        n_mc: int = 4,
-        seed: int = 1,
-    ) -> None:
+def get_liquidation_call_mask(
+    price_paths: np.array,
+    dt: float,
+    lt: float,
+    ltv0: float,
+    r_collateral_eth: np.array,
+    r_debt_dai: float,
+) -> np.array:
+    p0 = price_paths[0, 0]
+    n_mc, n_steps = price_paths.shape
+    time_array = np.arange(n_steps) * dt
+    time_array = np.tile(time_array, (n_mc, 1))
+    mask = (
+        price_paths * np.exp((r_collateral_eth - r_debt_dai) * time_array)
+        <= 1 / lt * ltv0 * p0
+    )
+    return mask
 
-        # eth price process
-        self.price_paths = get_gbm(
-            mu=mu, sigma=sigma, dt=dt, n_steps=n_steps, p0=p0, seed=seed, n_mc=n_mc
+
+def get_liquidation_times(
+    price_paths: np.array,
+    dt: float,
+    lt: float,
+    ltv0: float,
+    r_collateral_eth: np.array,
+    r_debt_dai: float,
+):
+    mask = get_liquidation_call_mask(
+        price_paths, dt, lt, ltv0, r_collateral_eth, r_debt_dai
+    )
+    mask = mask.astype(int)
+    idx_liquidation_time = np.argmax(mask, axis=1, keepdims=True)
+    liquidation_time = idx_liquidation_time * dt
+    T = dt * price_paths.shape[1]
+    liquidation_time[liquidation_time == 0] = (
+        T + 0.1
+    )  # big number out of considered time range
+    return liquidation_time
+
+
+def get_pnl_lending_position(
+    price_paths,
+    dt: float,
+    lt: float,
+    ltv0: float,
+    r_collateral_eth: np.array,
+    r_debt_dai: float,
+):
+    p0 = price_paths[0, 0]
+    n_mc, n_steps = price_paths.shape
+    time_array = np.arange(n_steps) * dt
+    time_array = np.tile(time_array, (n_mc, 1))
+    liquidation_times = get_liquidation_times(
+        price_paths, dt, lt, ltv0, r_collateral_eth, r_debt_dai
+    )
+
+    payoff = (
+        price_paths * np.exp(r_collateral_eth * time_array)
+        - ltv0 * p0 * np.exp(r_debt_dai * time_array)
+    ) * (time_array <= liquidation_times)
+    for i, row in enumerate(payoff):
+        payoff[i, time_array[i] > liquidation_times[i]] = payoff[
+            i, time_array[i] == liquidation_times[i]
+        ]
+
+    pnl = payoff - p0 * (1 - ltv0)
+    return pnl
+
+
+def decompose_pnl_lending_position(
+    price_paths,
+    dt: float,
+    lt: float,
+    ltv0: float,
+    r_collateral_eth: np.array,
+    r_debt_dai: float,
+) -> Tuple[np.array, np.array]:
+    p0 = price_paths[0, 0]
+    n_mc, n_steps = price_paths.shape
+    time_array = np.arange(n_steps) * dt
+    time_array = np.tile(time_array, (n_mc, 1))
+    return price_paths - p0, price_paths * (
+        1 - np.exp(r_collateral_eth * time_array)
+    ) - ltv0 * p0 * (1 - np.exp(r_debt_dai * time_array))
+
+
+@st.cache_data  # -- Magic command to cache data
+def get_perps_price_mean_rev(
+    price_paths: np.array,
+    lambda_: float,
+    sigma: float,
+    dt: float,
+    r: float,
+    kappa: float = 1,
+    seed: int = 1,
+) -> np.array:
+    n_mc = price_paths.shape[0]
+    p0 = price_paths[0, 0]
+    f0 = p0 * (1 + r / kappa)
+    f = np.ones_like(price_paths) * f0
+    rng = np.random.default_rng(seed)
+    for step in range(1, f.shape[1]):
+        z = rng.normal(size=n_mc)
+        f[:, step] = (
+            f[:, step - 1]
+            + lambda_ * (price_paths[:, step - 1] - f[:, step - 1]) * dt
+            + np.sqrt(dt) * sigma * z
         )
-
-        self.u_eth = get_utilisation(
-            price_paths=self.price_paths, u0=u0_eth, a=alpha_eth
-        )
-        self.u_dai = get_utilisation(
-            price_paths=self.price_paths, u0=u0_dai, a=alpha_dai
-        )
-
-        self.r_collateral_eth = vect_irm(
-            utilisation=self.u_eth,
-            u_optimal=u_optimal,
-            r_0=r_0,
-            r_1=r_1,
-            r_2=r_2,
-            collateral=True,
-        )
-        self.r_debt_dai = vect_irm(
-            utilisation=self.u_dai,
-            u_optimal=u_optimal,
-            r_0=r_0,
-            r_1=r_1,
-            r_2=r_2,
-            collateral=False,
-        )
-
-        self.time_array = np.tile(np.arange(n_steps) * dt, (n_mc, 1))
-
-        self.liquidation_call_mask = (
-            self.price_paths
-            * np.exp((self.r_collateral_eth - self.r_debt_dai) * self.time_array)
-            <= 1 / lt * ltv0 * p0
-        )
-
-        self.p0 = p0  # initial price
-        self.n_steps = n_steps  # number of steps
-        self.dt = dt  # time step
-        self.n_mc = n_mc  # number of monte carlo simulations
-        self.lt = lt  # liquidation threshold
-        self.ltv0 = ltv0  # initial loan-to-value ratio
-
-    @property
-    def liquidation_times(self) -> np.ndarray:
-        mask = self.liquidation_call_mask.astype(int)
-        idx_liquidation_time = np.argmax(mask, axis=1, keepdims=True)
-        liquidation_time = idx_liquidation_time * self.dt
-        liquidation_time[liquidation_time == 0] = self.dt * self.n_steps + 0.1
-        return liquidation_time
-
-    @property
-    def pnl_lending_position(self) -> np.ndarray:
-        payoff = self.price_paths * np.exp(self.r_collateral_eth * self.time_array) - (
-            self.ltv0 * self.p0 * np.exp(self.r_debt_dai * self.time_array)
-        ) * (self.time_array <= self.liquidation_times)
-        for i, _ in enumerate(payoff):
-            payoff[i, self.time_array[i] > self.liquidation_times[i]] = payoff[
-                i, self.time_array[i] == self.liquidation_times[i]
-            ]
-        return payoff - self.p0 * (1 - self.ltv0)
-
-    @property
-    def pnl_perps_position(self) -> tuple[np.ndarray, np.ndarray]:
-        return self.price_paths - self.p0, self.price_paths * (
-            1 - np.exp(self.r_collateral_eth * self.time_array)
-        ) - self.ltv0 * self.p0 * (1 - np.exp(self.r_debt_dai * self.time_array))
-
-    def perps_price_mean_rev(
-        self,
-        lambda_: float,
-        sigma: float,
-        r: float,
-        kappa: float = 1,
-        seed: int = 1,
-    ) -> np.ndarray:
-        f0 = self.p0 * (1 + r / kappa)
-        f = np.ones_like(self.price_paths) * f0
-        rng = np.random.default_rng(seed)
-        for step in range(1, self.n_steps):
-            z = rng.normal(size=self.n_mc)
-            f[:, step] = (
-                f[:, step - 1]
-                + lambda_ * (self.price_paths[:, step - 1] - f[:, step - 1]) * self.dt
-                + np.sqrt(self.dt) * sigma * z
-            )
-        return f
+    return f
 
 
 @st.cache_data  # -- Magic command to cache data
@@ -643,40 +648,40 @@ with col2:
     alpha_dai = st.slider("$\\alpha^{DAI}$", -1.0, 1.0, 0.05, step=0.01)
     u0_dai = st.slider("$u_0^{DAI}$", 0.0, 1.0, 0.4, step=0.01)
 
-# u_eth = get_utilisation(price_paths=price_paths, u0=u0_eth, a=alpha_eth)
-# u_dai = get_utilisation(price_paths=price_paths, u0=u0_dai, a=alpha_dai)
+u_eth = get_utilisation(price_paths=price_paths, u0=u0_eth, a=alpha_eth)
+u_dai = get_utilisation(price_paths=price_paths, u0=u0_dai, a=alpha_dai)
 
 # Create figure with secondary y-axis
-# _, col, _ = st.columns([0.1, 0.8, 0.1])
-# with col:
-#     fig = make_subplots(specs=[[{"secondary_y": True}]])
+_, col, _ = st.columns([0.1, 0.8, 0.1])
+with col:
+    fig = make_subplots(specs=[[{"secondary_y": True}]])
 
-#     fig.add_trace(
-#         go.Scatter(
-#             x=time,
-#             y=price_paths[seed_, :],
-#             name="ETH price",
-#         ),
-#         secondary_y=False,
-#     )
-#     fig.add_trace(
-#         go.Scatter(x=time, y=u_eth[seed_, :], name="ETH pool utilisation"),
-#         secondary_y=True,
-#     )
-#     fig.add_trace(
-#         go.Scatter(x=time, y=u_dai[seed_, :], name="DAI pool utilisation"),
-#         secondary_y=True,
-#     )
+    fig.add_trace(
+        go.Scatter(
+            x=time,
+            y=price_paths[seed_, :],
+            name="ETH price",
+        ),
+        secondary_y=False,
+    )
+    fig.add_trace(
+        go.Scatter(x=time, y=u_eth[seed_, :], name="ETH pool utilisation"),
+        secondary_y=True,
+    )
+    fig.add_trace(
+        go.Scatter(x=time, y=u_dai[seed_, :], name="DAI pool utilisation"),
+        secondary_y=True,
+    )
 
-#     # Set x-axis title
-#     fig.update_xaxes(title_text="time")
+    # Set x-axis title
+    fig.update_xaxes(title_text="time")
 
-#     # Set y-axes titles
-#     fig.update_yaxes(title_text="pool utilisation", secondary_y=True)
-#     fig.update_yaxes(title_text="ETH-USD price", secondary_y=False)
-#     # fig.write_image(f"results/price_utilisation_mu{mu}_sigma{sigma}.png")
+    # Set y-axes titles
+    fig.update_yaxes(title_text="pool utilisation", secondary_y=True)
+    fig.update_yaxes(title_text="ETH-USD price", secondary_y=False)
+    # fig.write_image(f"results/price_utilisation_mu{mu}_sigma{sigma}.png")
 
-#     st.plotly_chart(fig, use_container_width=True)
+    st.plotly_chart(fig, use_container_width=True)
 
 
 # --------------------------
@@ -719,6 +724,12 @@ with col2:
     fig = px.line(x=utilisation, y=rate, labels={"x": "utilisation", "y": "rate"})
     st.plotly_chart(fig)
 
+r_collateral_eth = vect_irm(
+    u_optimal=u_optimal, r_0=r_0, r_1=r_1, r_2=r_2, utilisation=u_eth, collateral=True
+)
+r_debt_dai = vect_irm(
+    u_optimal=u_optimal, r_0=r_0, r_1=r_1, r_2=r_2, utilisation=u_dai, collateral=False
+)
 
 st.markdown("""---""")
 st.write("Price and Interest rates")
