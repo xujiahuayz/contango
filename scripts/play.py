@@ -8,8 +8,26 @@
 
 # plt.hist(Y, bins=1000, color="c", edgecolor="black")
 # plt.xlim(0, 10)
+        mu = 0.0
+        sigma = 0.1
+        dt = 0.01
+        p0 = 2_000
+        n_steps = 100  # number of price values to be generated
+        n_mc = 1
+        seed = 1
+        alpha_eth = -0.15
+        alpha_dai = 0.05
+        u0_eth = 0.4
+        u0_dai = 0.4
+        r_0 = 0.0
+        r_1 = 0.04
+        r_2 = 2.5
+        u_optimal = 0.45
 
-# from typing import Tuple
+        lt = 0.85
+        ltv0 = 0.75
+
+from typing import Tuple
 
 import numpy as np
 
@@ -74,6 +92,7 @@ def irm(
 vect_irm = np.vectorize(irm, excluded=("u_optimal", "r_0", "r_1", "r_2", "collateral"))
 
 
+
 def get_liquidation_call_mask(
     price_paths: np.array,
     dt: float,
@@ -91,6 +110,24 @@ def get_liquidation_call_mask(
         <= 1 / lt * ltv0 * p0
     )
     return mask
+
+
+price_paths = get_gbm(mu = 0.0,
+    sigma = 0.1,
+    dt = 0.01,
+    p0 = 2_000,
+    n_steps = 9999,  # number of price values to be generated
+    n_mc = 1,
+    seed = 2)
+
+u_eth = get_utilisation(price_paths=price_paths, u0=u0_eth, a=alpha_eth)
+u_dai = get_utilisation(price_paths=price_paths, u0=u0_dai, a=alpha_dai)
+r_collateral_eth = vect_irm(
+    u_optimal=u_optimal, r_0=r_0, r_1=r_1, r_2=r_2, utilisation=u_eth, collateral=True
+)
+r_debt_dai = vect_irm(
+    u_optimal=u_optimal, r_0=r_0, r_1=r_1, r_2=r_2, utilisation=u_dai, collateral=False
+)
 
 
 def get_liquidation_times(
@@ -650,7 +687,12 @@ with col2:
 
 u_eth = get_utilisation(price_paths=price_paths, u0=u0_eth, a=alpha_eth)
 u_dai = get_utilisation(price_paths=price_paths, u0=u0_dai, a=alpha_dai)
-
+r_collateral_eth = vect_irm(
+    u_optimal=u_optimal, r_0=r_0, r_1=r_1, r_2=r_2, utilisation=u_eth, collateral=True
+)
+r_debt_dai = vect_irm(
+    u_optimal=u_optimal, r_0=r_0, r_1=r_1, r_2=r_2, utilisation=u_dai, collateral=False
+)
 # Create figure with secondary y-axis
 _, col, _ = st.columns([0.1, 0.8, 0.1])
 with col:
