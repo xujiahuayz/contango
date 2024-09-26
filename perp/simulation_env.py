@@ -9,12 +9,14 @@ class SimulationEnv:
         r_collateral_eth: float,
         r_debt_dai: float,
         dt: float = 0.01,
-        r: float = 0.05,  # r dai fixed
+        r: float = 0.005,  # r dai fixed
         lt: float = 0.85,
         ltv0: float = 0.75,
         seed: int = 1,
         kappa: float = 1,
         sigma_f: float = 0.1,
+        lambda_: float = 100,
+        lt_f: float = 0.0875,
     ) -> None:
 
         self.p0 = price_paths[0, 0]
@@ -31,6 +33,8 @@ class SimulationEnv:
         self.kappa = kappa
         self.r = r
         self.sigma_f = sigma_f
+        self.lambda_ = lambda_
+        self.lt_f = lt_f
 
     @property
     def liquidation_times(self) -> np.ndarray:
@@ -64,14 +68,13 @@ class SimulationEnv:
         return payoff - self.p0 * (1 - self.ltv0)
 
     @property
-    def pnl_perps_position(self) -> tuple[np.ndarray, np.ndarray]:
-        return self.price_paths - self.p0, self.price_paths * (
+    def implied_funding_fee(self) -> np.ndarray:
+        return self.price_paths * (
             1 - np.exp(self.r_collateral_eth * self.time_array)
         ) - self.ltv0 * self.p0 * (1 - np.exp(self.r_debt_dai * self.time_array))
 
     def perps_price_mean_rev(
         self,
-        lambda_: float,
     ) -> np.ndarray:
         rng = np.random.default_rng(self.seed)
         f0 = self.p0 * (1 + self.r / self.kappa)
@@ -79,7 +82,9 @@ class SimulationEnv:
         for step in range(1, self.n_steps):
             f[:, step] = (
                 f[:, step - 1]
-                + lambda_ * (self.price_paths[:, step - 1] - f[:, step - 1]) * self.dt
+                + self.lambda_
+                * (self.price_paths[:, step - 1] - f[:, step - 1])
+                * self.dt
                 + self.sigma_f
                 * rng.normal(loc=0, scale=np.sqrt(self.dt), size=self.n_mc)
             )
@@ -90,7 +95,6 @@ class SimulationEnv:
         sigma_noise: float,
         window_length: int,
         delta: float,
-        lambda_: int,
     ) -> np.ndarray:
 
         # moving average
@@ -106,7 +110,7 @@ class SimulationEnv:
 
             mean_rev[:, step] = (
                 mean_rev[:, step - 1]
-                + lambda_
+                + self.lambda_
                 * (self.price_paths[:, step - 1] - mean_rev[:, step - 1])
                 * self.dt
                 + self.sigma_f
@@ -131,7 +135,7 @@ class SimulationEnv:
     def get_funding_fee_perps(
         self,
         perps_price_paths: np.array,
-    ):
+    ) -> np.ndarray:
         funding_fee = np.zeros(shape=(self.n_mc, self.n_steps))
         time_array = np.arange(self.n_steps) * self.dt
         for step in range(1, self.n_steps):
@@ -148,7 +152,7 @@ class SimulationEnv:
     def get_pnl_perps(
         self,
         perps_price_paths: np.array,
-    ):
+    ) -> np.ndarray:
         funding_fee = self.get_funding_fee_perps(perps_price_paths)
         pnl = np.zeros_like(self.price_paths)
         pnl = (
@@ -161,11 +165,10 @@ class SimulationEnv:
 
     def liquidation_times_perp(
         self,
-        perps_price_paths: np.array,
-        lt_f: float,
-    ):
+        perps_price_paths: np.ndarray,
+    ) -> np.ndarray:
         pnl = self.get_pnl_perps(perps_price_paths)
-        maintenance_margin = self.price_paths * lt_f
+        maintenance_margin = self.price_paths * self.lt_f
         initial_margin = self.p0 * (1 - self.ltv0)
         mask = maintenance_margin >= initial_margin + pnl
 
@@ -174,13 +177,12 @@ class SimulationEnv:
         liquidation_time[liquidation_time == 0] = self.dt * self.n_steps + 0.1
         return liquidation_time
 
-    def pnl_perps_after_liquidation(self, perps_price_paths: np.array, lt_f: float):
+    def pnl_perps_after_liquidation(self, perps_price_paths: np.ndarray) -> np.ndarray:
         pnl = self.get_pnl_perps(perps_price_paths)
         time_array = self.time_array
 
         liquidation_times = self.liquidation_times_perp(
-            perps_price_paths=perps_price_paths,
-            lt_f=lt_f,
+            perps_price_paths=perps_price_paths
         )
         pnl = pnl * (time_array <= liquidation_times)
         for i, _ in enumerate(pnl):
