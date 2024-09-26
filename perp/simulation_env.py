@@ -36,7 +36,6 @@ class SimulationEnv:
         self.lambda_ = lambda_
         self.lt_f = lt_f
 
-    @property
     def liquidation_times(self) -> np.ndarray:
         # get true / false mask for liquidation call
         liquidation_call_mask = (
@@ -54,20 +53,19 @@ class SimulationEnv:
             * self.dt
         ).reshape(-1, 1)
 
-    @property
     def pnl_lending_position(self) -> np.ndarray:
         payoff = self.price_paths * np.exp(self.r_collateral_eth * self.time_array) - (
             self.ltv0 * self.p0 * np.exp(self.r_debt_dai * self.time_array)
         )
+        liquidation_times = self.liquidation_times()
         # after liquidation no more payoff, it flattens out
         # TODO: check if it should flatten out or be NAN
         for i, _ in enumerate(payoff):
-            payoff[i, self.time_array[i] > self.liquidation_times[i]] = payoff[
-                i, self.time_array[i] == self.liquidation_times[i]
+            payoff[i, self.time_array[i] > liquidation_times[i]] = payoff[
+                i, self.time_array[i] == liquidation_times[i]
             ]
         return payoff - self.p0 * (1 - self.ltv0)
 
-    @property
     def implied_funding_fee(self) -> np.ndarray:
         return self.price_paths * (
             1 - np.exp(self.r_collateral_eth * self.time_array)
@@ -172,10 +170,15 @@ class SimulationEnv:
         initial_margin = self.p0 * (1 - self.ltv0)
         mask = maintenance_margin >= initial_margin + pnl
 
-        idx_liquidation_time = np.argmax(mask.astype(int), axis=1, keepdims=True)
-        liquidation_time = idx_liquidation_time * self.dt
-        liquidation_time[liquidation_time == 0] = self.dt * self.n_steps + 0.1
-        return liquidation_time
+        return (
+            # if not liquidation, assign a time out of step range
+            np.where(
+                np.any(mask, axis=1),
+                np.argmax(mask, axis=1),
+                (self.n_steps + 1),
+            )
+            * self.dt
+        ).reshape(-1, 1)
 
     def pnl_perps_after_liquidation(self, perps_price_paths: np.ndarray) -> np.ndarray:
         pnl = self.get_pnl_perps(perps_price_paths)
@@ -184,7 +187,6 @@ class SimulationEnv:
         liquidation_times = self.liquidation_times_perp(
             perps_price_paths=perps_price_paths
         )
-        pnl = pnl * (time_array <= liquidation_times)
         for i, _ in enumerate(pnl):
             pnl[i, time_array[i] >= liquidation_times[i]] = pnl[
                 i, time_array[i] == liquidation_times[i]
@@ -194,12 +196,31 @@ class SimulationEnv:
 
 
 if __name__ == "__main__":
+    pass
+    # dai_backed_eth = SimulatedAssets(
+    #     n_steps=101, seed=1, mu=0, sigma=0.3, n_mc=500, dt=0.01
+    # )
 
-    dai_backed_eth = SimulatedAssets(n_steps=10_000, seed=2)
-    sim_env = SimulationEnv(
-        price_paths=dai_backed_eth.price_paths,
-        r_collateral_eth=dai_backed_eth.r_collateral_eth,
-        r_debt_dai=dai_backed_eth.r_debt_dai,
-        dt=dai_backed_eth.dt,
-    )
-    print(sim_env.liquidation_times)
+    # self = SimulationEnv(
+    #     price_paths=dai_backed_eth.price_paths,
+    #     r_collateral_eth=dai_backed_eth.r_collateral_eth,
+    #     r_debt_dai=dai_backed_eth.r_debt_dai,
+    #     dt=dai_backed_eth.dt,
+    #     lambda_=50,
+    #     sigma_f=0.3,
+    #     kappa=1,
+    #     r=0.005,
+    # )
+
+    # perps_price_paths = self.perps_price_realistic(
+    #     sigma_noise=6.5, window_length=5, delta=5
+    # )
+
+    # dai_backed_eth = SimulatedAssets(n_steps=10_000, seed=2)
+    # sim_env = SimulationEnv(
+    #     price_paths=dai_backed_eth.price_paths,
+    #     r_collateral_eth=dai_backed_eth.r_collateral_eth,
+    #     r_debt_dai=dai_backed_eth.r_debt_dai,
+    #     dt=dai_backed_eth.dt,
+    # )
+    # print(sim_env.liquidation_times)
