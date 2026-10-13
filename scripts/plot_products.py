@@ -4,9 +4,10 @@ import matplotlib.pyplot as plt
 from perp.constants import CONTANGO_NAME, FIGURE_PATH, SYMBOL_LIST, USD_STABLECOIN
 from scripts.simluate import c_perp_position_change
 
-products = ["dYdX", "Huobi", "Binance", CONTANGO_NAME]
+products = ["dYdX", "OKX", "Binance", CONTANGO_NAME]
 # set plot color with python default color
 product_color = ["C0", "C1", "C2", "C3"]
+
 
 
 # product_color = ["#68228B", "#FF3030", "#B8860B", "#00CED1"]
@@ -67,7 +68,7 @@ for symbol in SYMBOL_LIST:
     plt.savefig(
         FIGURE_PATH / f"funding_rates_{symbol}.pdf",
         bbox_inches="tight",
-        pad_inches=0,
+        pad_inches=0.1,
         transparent=True,
     )
 

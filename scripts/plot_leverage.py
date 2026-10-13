@@ -8,7 +8,7 @@ from scripts.simluate import c_perp_position_change
 leverage_color = ["C0", "C1", "C2", "C3"]
 plt.rcParams.update({"font.size": 20})
 
-rates_cols = ["variableBorrowRate", "liquidityRate", "utilizationRate"]
+rates_cols = ["variableBorrowRatePct", "liquidityRatePct", "utilization"]
 
 stable_util = interpolate_df(USD_STABLECOIN, rates_cols)
 
@@ -47,7 +47,7 @@ for symbol in SYMBOL_LIST:
         df_to_use = risk_util if plot_risk else stable_util
         ax_to_use.plot(
             df_to_use.index,
-            df_to_use["utilizationRate"],
+            df_to_use["utilization"].ffill(),
             linewidth=1.5,
             alpha=0.9,
             color="C4",
@@ -55,7 +55,7 @@ for symbol in SYMBOL_LIST:
         )
         ax_to_use.plot(
             df_to_use.index,
-            df_to_use["variableBorrowRate"],
+            df_to_use["variableBorrowRatePct"].ffill()/100,
             linewidth=1.5,
             alpha=0.9,
             color="C5",
@@ -64,7 +64,7 @@ for symbol in SYMBOL_LIST:
         )
         ax_to_use.plot(
             df_to_use.index,
-            df_to_use["liquidityRate"],
+            df_to_use["liquidityRatePct"].ffill()/100,
             linewidth=1.5,
             alpha=0.9,
             color="C6",

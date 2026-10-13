@@ -20,9 +20,10 @@ def c_perp_position_change(
         risk_asset=("W" if risk_asset in ["ETH", "BTC"] else "") + risk_asset,
         usd_asset=usd_asset,
         long_risk=long_risk,
-    )
+    )/100
 
-    df = coinglass_df.merge(aave_df, how="left", left_index=True, right_index=True)
+
+    df = coinglass_df.merge(aave_df, how="left", left_index=True, right_index=True).dropna(axis=0)
 
     if long_risk:
         env = DefiEnv(
@@ -105,12 +106,12 @@ def c_perp_position_change(
     # get index and row values in coinglass_aave_df
     for index, row_values in df.iterrows():
         if long_risk:
-            plf_risk.supply_apy = row_values["liquidityRate"]
-            plf_usd.borrow_apy = row_values["variableBorrowRate"]
+            plf_risk.supply_apy = row_values["liquidityRatePct"]
+            plf_usd.borrow_apy = row_values["variableBorrowRatePct"]
             env.prices[risk_asset] = row_values["price"]
         else:
-            plf_usd.supply_apy = row_values["liquidityRate"]
-            plf_risk.borrow_apy = row_values["variableBorrowRate"]
+            plf_usd.supply_apy = row_values["liquidityRatePct"]
+            plf_risk.borrow_apy = row_values["variableBorrowRatePct"]
             env.prices[usd_asset] = row_values["price"]
         # assign values to the row
         df.at[index, "cperp_health"] = cperp1.plf_health
@@ -141,7 +142,9 @@ def c_perp_position_change(
     # cperp value change as pnl
     df["pnl"] = df["cperp_value"] - df["cperp_value"][0]
     # price change as trading gain
-    df["trading_gain"] = df["price"] - df["price"][0]
+    df["trading_gain"] = df["cperp_principal"] * (
+            df["price"] - df["price"].dropna()[0]
+    )
     df["implied_funding_payment"] = df["trading_gain"] - df["pnl"]
     df["cperp_funding_payment"] = df["implied_funding_payment"].diff() * (
         1 if long_risk else -1
@@ -156,7 +159,7 @@ def c_perp_position_change(
 
 if __name__ == "__main__":
     coinglass_aave_df = c_perp_position_change(
-        risk_asset="ETH", usd_asset="USDC", long_risk=False, leverage_multiplier=5
+        risk_asset="ETH", usd_asset="DAI", long_risk=True, leverage_multiplier=5
     )
     plt.plot(coinglass_aave_df["Binance"], label="Binance")
     plt.plot(coinglass_aave_df["OKX"], label="OKX")
@@ -164,5 +167,7 @@ if __name__ == "__main__":
     plt.plot(coinglass_aave_df["dYdX"], label="dYdX")
     plt.plot(coinglass_aave_df[CONTANGO_NAME], label=CONTANGO_NAME)
     plt.legend()
-
+    # plt.show()
+    # convert & drop tz on index
+    coinglass_aave_df.index = pd.DatetimeIndex(coinglass_aave_df.index).tz_convert("UTC").tz_localize(None)
     coinglass_aave_df.to_excel(DATA_PATH / "coinglass_aave_df.xlsx")

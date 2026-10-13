@@ -2,30 +2,78 @@
 
 # import numpy as np
 # import matplotlib.pyplot as plt
+import streamlit as st
+import pandas as pd
+import plotly.graph_objects as go
+from plotly.subplots import make_subplots
+import plotly.express as px
+import plotly.io as pio
+
+sizes_only = go.layout.Template(
+    layout=go.Layout(
+        font=dict(size=22),
+        title=dict(font=dict(size=24)),
+        legend=dict(font=dict(size=20)),
+        xaxis=dict(title_font=dict(size=22), tickfont=dict(size=18)),
+        yaxis=dict(title_font=dict(size=22), tickfont=dict(size=18)),
+    )
+)
+pio.templates["sizes_only"] = sizes_only
+pio.templates.default = "plotly+sizes_only"
 
 # X = np.random.randn(100_000)
 # Y = np.exp(X)
 
-# plt.hist(Y, bins=1000, color="c", edgecolor="black")
-# plt.xlim(0, 10)
-        mu = 0.0
-        sigma = 0.1
-        dt = 0.01
-        p0 = 2_000
-        n_steps = 100  # number of price values to be generated
-        n_mc = 1
-        seed = 1
-        alpha_eth = -0.15
-        alpha_dai = 0.05
-        u0_eth = 0.4
-        u0_dai = 0.4
-        r_0 = 0.0
-        r_1 = 0.04
-        r_2 = 2.5
-        u_optimal = 0.45
+import argparse, streamlit as st
 
-        lt = 0.85
-        ltv0 = 0.75
+@st.cache_resource  # parse once per session
+def _parse_cli():
+    p = argparse.ArgumentParser(add_help=False)
+    p.add_argument("--mu", type=float, default=0.0)
+    p.add_argument("--sigma", type=float, default=0.9)
+    p.add_argument("--time", type=float, default=0.25)
+    # long-run basis level m; omit for the baseline m = r / kappa, pass 0.0001 for the bull scenario
+    p.add_argument("--premium", type=float, default=None)
+    args, _ = p.parse_known_args()  # ignore Streamlit’s own flags
+    return args
+
+args = _parse_cli()
+mu, sigma, t = args.mu, args.sigma, args.time
+st.write("CLI:", mu, sigma, t)
+
+
+dt = 1 / (3 * 365)  # 8-hour step, the funding settlement interval
+p0 = 2_000
+n_steps = 3 * 365  # one year of 8-hour steps
+n_mc = 10000
+# seed = 8765
+# Funding coefficient per year: funding settles every 8 hours (3 x 365 periods per year),
+# so the basis is paid off once per period (Ackerer et al., 2024).
+KAPPA = 3 * 365
+# Relative basis b = (F - P) / P, calibrated on 8-hour ETH data (scripts/calibrate_basis.py).
+LAMBDA_B = 539.0  # mean-reversion speed per year (half-life about 11 hours)
+SIGMA_B = 0.0072  # volatility per square-root year
+BULL_PREMIUM = 0.0001  # 90th percentile of Binance ETHUSDT 8-hour funding rates
+# Aave v3 interest rate strategies, per pool (published parameters, 2025).
+# WETH, Ethereum Core: Aave governance forum, Risk Stewards WETH/wstETH update (19 July 2025).
+IRM_ETH = dict(u_optimal=0.90, r_0=0.0, r_1=0.027, r_2=0.80, reserve_factor=0.15)
+# DAI, Arbitrum: slope 1 = 6% (Chaos Labs Risk Stewards, 28 March 2025); optimal usage 90% and
+# slope 2 of about 40% from the Aave app's interest rate model (read in October 2026); reserve
+# factor 25% implied by the supply and borrow rates in data/aave_v3_arbitrum_dai_8h_180d.jsonl.gz.
+IRM_DAI = dict(u_optimal=0.90, r_0=0.0, r_1=0.06, r_2=0.40, reserve_factor=0.25)
+# Utilisation map d nu = alpha d log P, U = sigmoid(nu) (scripts/calibrate_utilisation.py):
+# alpha from weekly changes of logit(U) on ETH log returns, u0 = sample mean utilisation.
+alpha_eth = 1.6  # WETH, Aave v3 Ethereum
+alpha_dai = 2.15  # DAI, Aave v3 Arbitrum
+u0_eth = 0.88
+u0_dai = 0.81
+r_0 = 0.0
+r_1 = 0.04
+r_2 = 2.5
+u_optimal = 0.45
+
+lt = 0.95
+ltv0 = 0.75
 
 from typing import Tuple
 
@@ -60,12 +108,12 @@ def get_utilisation(
     b: float = 0,
 ) -> np.array:
     latent_u = np.zeros_like(price_paths)
-    norm_price_paths = (price_paths - price_paths.mean()) / price_paths.std()
+    log_price_paths = np.log(price_paths)  # d nu = a d log P (Reviewer 2, comment 2.4e)
     latent_u[:, 0] = reciprocal_sigmoid(u0)
 
     for i in range(1, latent_u.shape[1]):
-        delta_P = norm_price_paths[:, i] - norm_price_paths[:, i - 1]
-        latent_u[:, i] = latent_u[:, i - 1] + (a + b * latent_u[:, i - 1]) * delta_P
+        delta_log_P = log_price_paths[:, i] - log_price_paths[:, i - 1]
+        latent_u[:, i] = latent_u[:, i - 1] + (a + b * latent_u[:, i - 1]) * delta_log_P
 
     u = sigmoid(latent_u)
     return u
@@ -78,18 +126,22 @@ def irm(
     r_2: float,
     utilisation: float,
     collateral: bool,
+    reserve_factor: float = 0.0,
 ) -> float:
     if utilisation < u_optimal:
         r = r_0 + r_1 * utilisation / u_optimal
     else:
         r = r_0 + r_1 + r_2 * (utilisation - u_optimal) / (1 - u_optimal)
     if collateral:
-        return utilisation * r
+        # suppliers receive the borrow interest net of the protocol's reserve factor
+        return utilisation * r * (1 - reserve_factor)
     else:
         return r
 
 
-vect_irm = np.vectorize(irm, excluded=("u_optimal", "r_0", "r_1", "r_2", "collateral"))
+vect_irm = np.vectorize(
+    irm, excluded=("u_optimal", "r_0", "r_1", "r_2", "collateral", "reserve_factor")
+)
 
 
 
@@ -106,7 +158,7 @@ def get_liquidation_call_mask(
     time_array = np.arange(n_steps) * dt
     time_array = np.tile(time_array, (n_mc, 1))
     mask = (
-        price_paths * np.exp((r_collateral_eth - r_debt_dai) * time_array)
+        price_paths * np.exp((np.cumsum(r_collateral_eth, axis=1) - r_collateral_eth) * dt - (np.cumsum(r_debt_dai, axis=1) - r_debt_dai) * dt)
         <= 1 / lt * ltv0 * p0
     )
     return mask
@@ -123,10 +175,10 @@ price_paths = get_gbm(mu = 0.0,
 u_eth = get_utilisation(price_paths=price_paths, u0=u0_eth, a=alpha_eth)
 u_dai = get_utilisation(price_paths=price_paths, u0=u0_dai, a=alpha_dai)
 r_collateral_eth = vect_irm(
-    u_optimal=u_optimal, r_0=r_0, r_1=r_1, r_2=r_2, utilisation=u_eth, collateral=True
+    **IRM_ETH, utilisation=u_eth, collateral=True
 )
 r_debt_dai = vect_irm(
-    u_optimal=u_optimal, r_0=r_0, r_1=r_1, r_2=r_2, utilisation=u_dai, collateral=False
+    **IRM_DAI, utilisation=u_dai, collateral=False
 )
 
 
@@ -158,6 +210,8 @@ def get_pnl_lending_position(
     ltv0: float,
     r_collateral_eth: np.array,
     r_debt_dai: float,
+    flashloan_fee: float = 0.0,
+    liquidation_penalty: float = 0.0,
 ):
     p0 = price_paths[0, 0]
     n_mc, n_steps = price_paths.shape
@@ -167,15 +221,17 @@ def get_pnl_lending_position(
         price_paths, dt, lt, ltv0, r_collateral_eth, r_debt_dai
     )
 
-    payoff = (
-        price_paths * np.exp(r_collateral_eth * time_array)
-        - ltv0 * p0 * np.exp(r_debt_dai * time_array)
-    ) * (time_array <= liquidation_times)
-    for i, row in enumerate(payoff):
-        payoff[i, time_array[i] > liquidation_times[i]] = payoff[
-            i, time_array[i] == liquidation_times[i]
-        ]
-
+    collateral_value = price_paths * np.exp((np.cumsum(r_collateral_eth, axis=1) - r_collateral_eth) * dt)
+    debt_value = ltv0 * p0 * np.exp((np.cumsum(r_debt_dai, axis=1) - r_debt_dai) * dt)
+    payoff = collateral_value - debt_value
+    # Eq. (1): full liquidation (close factor 1); the liquidation penalty is charged on
+    # the repaid debt and the borrower keeps the residual, frozen at tau^B and floored at 0.
+    residual = np.maximum(collateral_value - (1 + liquidation_penalty) * debt_value, 0.0)
+    for i, _ in enumerate(payoff):
+        at_liquidation = time_array[i] == liquidation_times[i]
+        if at_liquidation.any():
+            payoff[i, time_array[i] >= liquidation_times[i]] = residual[i, at_liquidation][0]
+    payoff = payoff * (1 - flashloan_fee)
     pnl = payoff - p0 * (1 - ltv0)
     return pnl
 
@@ -192,9 +248,9 @@ def decompose_pnl_lending_position(
     n_mc, n_steps = price_paths.shape
     time_array = np.arange(n_steps) * dt
     time_array = np.tile(time_array, (n_mc, 1))
-    return price_paths - p0, price_paths * (
-        1 - np.exp(r_collateral_eth * time_array)
-    ) - ltv0 * p0 * (1 - np.exp(r_debt_dai * time_array))
+    return price_paths - p0, p0 * ((
+        1 - np.exp((np.cumsum(r_collateral_eth, axis=1) - r_collateral_eth) * dt)
+    ) - ltv0 * (1 - np.exp((np.cumsum(r_debt_dai, axis=1) - r_debt_dai) * dt)))
 
 
 @st.cache_data  # -- Magic command to cache data
@@ -204,8 +260,8 @@ def get_perps_price_mean_rev(
     sigma: float,
     dt: float,
     r: float,
-    kappa: float = 1,
-    seed: int = 1,
+    kappa: float = KAPPA,
+    seed: int = 8000,
 ) -> np.array:
     n_mc = price_paths.shape[0]
     p0 = price_paths[0, 0]
@@ -216,7 +272,7 @@ def get_perps_price_mean_rev(
         z = rng.normal(size=n_mc)
         f[:, step] = (
             f[:, step - 1]
-            + lambda_ * (price_paths[:, step - 1] - f[:, step - 1]) * dt
+            + lambda_ * ((1 + r / kappa) * price_paths[:, step - 1] - f[:, step - 1]) * dt
             + np.sqrt(dt) * sigma * z
         )
     return f
@@ -225,12 +281,12 @@ def get_perps_price_mean_rev(
 @st.cache_data  # -- Magic command to cache data
 def get_perps_price_mean_rev_to_non_arb(
     price_paths: np.array,
-    lambda_: float,
+    lamda_: float,
     sigma: float,
     dt: float,
     r: float,
-    kappa: float = 1,
-    seed: int = 1,
+    kappa: float = KAPPA,
+    seed: int = 8767,
 ) -> np.array:
     n_mc = price_paths.shape[0]
     p0 = price_paths[0, 0]
@@ -257,7 +313,7 @@ def get_perps_price_realistic(
     window_length: int,
     delta: float,
     lambda_: int,
-    seed: int = 1,
+    seed: int,
 ) -> np.array:
 
     n_mc = price_paths.shape[0]
@@ -296,7 +352,28 @@ def get_perps_price_realistic(
     return f
 
 
-def get_perps_price_non_arb(price_paths: np.array, r: float, kappa: float = 1):
+def get_perps_price_basis_ou(
+    price_paths: np.array,
+    dt: float,
+    lambda_: float,
+    sigma_b: float,
+    m: float,
+    b0: float,
+    seed: int,
+) -> np.array:
+    """F_t = P_t (1 + b_t) with db_t = lambda (m - b_t) dt + sigma_b dW_t, simulated exactly."""
+    n_mc, n_steps = price_paths.shape
+    rng = np.random.default_rng(seed)
+    a = np.exp(-lambda_ * dt)
+    s = sigma_b * np.sqrt((1 - a**2) / (2 * lambda_))
+    b = np.empty_like(price_paths)
+    b[:, 0] = b0
+    for step in range(1, n_steps):
+        b[:, step] = m + (b[:, step - 1] - m) * a + s * rng.standard_normal(n_mc)
+    return price_paths * (1 + b)
+
+
+def get_perps_price_non_arb(price_paths: np.array, r: float, kappa: float = KAPPA):
     f = price_paths * (1 + r / kappa)
     return f
 
@@ -306,7 +383,7 @@ def get_funding_fee_perps(
     perps_price_paths: np.array,
     r_debt_dai: np.array,
     dt: float,
-    kappa: float = 1,
+    kappa: float = KAPPA,
 ):
     n_mc, n_steps = price_paths.shape
     funding_fee = np.zeros(shape=(n_mc, n_steps))
@@ -329,16 +406,19 @@ def get_pnl_perps(
     r_debt_dai: np.array,
     dt: float,
     r: float,
-    kappa: float = 1,
+    kappa: float = KAPPA,
+    trading_fee: float = 0.0,
 ):
     n_mc, n_steps = perps_price_paths.shape
     funding_fee = get_funding_fee_perps(
         price_paths, perps_price_paths, r_debt_dai, dt, kappa
     )
     pnl = np.zeros_like(price_paths)
-    pnl = perps_price_paths - perps_price_paths[:, 0].reshape(n_mc, 1) - funding_fee
     coef = 1 + r / kappa
-    return 1 / coef * pnl
+    pnl = (1 / coef * (perps_price_paths * (1-trading_fee) - perps_price_paths[:, 0].reshape(n_mc, 1) )
+           - funding_fee)
+
+    return pnl
 
 
 def get_liquidation_times_perp(
@@ -349,9 +429,10 @@ def get_liquidation_times_perp(
     ltv0: float,
     dt: float,
     r: float,
-    kappa: float = 1,
+    kappa: float = KAPPA,
+    trading_fee: float = 0.0,
 ):
-    pnl = get_pnl_perps(price_paths, perps_price_paths, r_debt_dai, dt, r, kappa)
+    pnl = get_pnl_perps(price_paths, perps_price_paths, r_debt_dai, dt, r, kappa, trading_fee)
     p0 = price_paths[0, 0]
     n_mc, n_steps = price_paths.shape
     time_array = np.arange(n_steps) * dt
@@ -377,9 +458,11 @@ def get_pnl_perps_after_liquidation(
     ltv0: float,
     dt: float,
     r: float,
-    kappa: float = 1,
+    kappa: float = KAPPA,
+    liquidation_clearance_fee: float = 0.0,
+    trading_fee: float = 0.0,
 ):
-    pnl = get_pnl_perps(price_paths, perps_price_paths, r_debt_dai, dt, r, kappa)
+    pnl = get_pnl_perps(price_paths, perps_price_paths, r_debt_dai, dt, r, kappa, trading_fee)
     n_mc, n_steps = price_paths.shape
     time_array = np.arange(n_steps) * dt
     time_array = np.tile(time_array, (n_mc, 1))
@@ -393,12 +476,17 @@ def get_pnl_perps_after_liquidation(
         price_paths=price_paths,
         r=r,
         r_debt_dai=r_debt_dai,
+        trading_fee = trading_fee
     )
-    pnl = pnl * (time_array <= liquidation_times)
+    # Residual margin (P0(1 - theta0) + PnL - f_clr * F)^+ at tau^F, frozen afterwards.
+    initial_margin = price_paths[0, 0] * (1 - ltv0)
+    residual_pnl = np.maximum(
+        initial_margin + pnl - liquidation_clearance_fee * perps_price_paths, 0.0
+    ) - initial_margin
     for i, _ in enumerate(pnl):
-        pnl[i, time_array[i] >= liquidation_times[i]] = pnl[
-            i, time_array[i] == liquidation_times[i]
-        ]
+        at_liquidation = time_array[i] == liquidation_times[i]
+        if at_liquidation.any():
+            pnl[i, time_array[i] >= liquidation_times[i]] = residual_pnl[i, at_liquidation][0]
     return pnl
 
 
@@ -406,19 +494,19 @@ def get_pnl_perps_after_liquidation(
 # GLOBAL vars
 # ------------
 def get_idx_from_t(t):
-    return int(t * 100)
+    return int(round(t / dt))
 
 
-dt = 0.01
-n_steps = 100
+dt = 1 / (3 * 365)  # 8-hour step, the funding settlement interval
+n_steps = 3 * 365  # one year of 8-hour steps
 p0 = 2000
-seed = 1
-n_mc = 500  # 10000
+seed = 8700
+n_mc = 10000 #500
 
 r = 0.05
-kappa = 1
+kappa = KAPPA
+t = round(t / dt) * dt  # snap the reporting time to the simulation grid
 # --------------
-
 
 # -- Set page config
 apptitle = "Leveraged trading"
@@ -428,11 +516,11 @@ st.set_page_config(
 )
 
 
-header_col1, header_col2 = st.columns([0.2, 0.8], gap="medium")
-with header_col1:
-    st.image("logo.jpeg", width=100)
-with header_col2:
-    st.title("Simtopia")
+# header_col1, header_col2 = st.columns([0.2, 0.8], gap="medium")
+# with header_col1:
+#     st.image("logo.jpeg", width=100)
+# with header_col2:
+#     st.title("Simtopia")
 
 # --------
 # INTRO
@@ -510,8 +598,8 @@ st.subheader("Price process of underlying and price process of perps option")
 col1, col2, col3 = st.columns([0.3, 0.3, 0.3], gap="large")
 with col1:
     st.write("Price process")
-    mu = st.slider("$\mu$", -1.2, 1.2, 0.0, step=0.3)  # min, max, default
-    sigma = st.slider("$\sigma$", 0.1, 0.5, 0.3, 0.2)  # min, max, default
+    # mu = st.slider("$\mu$", -1.2, 1.2, 0.0, step=0.3)  # min, max, default
+    # sigma = st.slider("$\sigma$", 0.1, 0.5, 0.3, 0.2)  # min, max, default
 
 with col2:
     st.write("Perps Price process")
@@ -524,10 +612,10 @@ with col2:
         index=1,
     )
     lambda_ = st.slider(
-        "$\lambda$ mean-reversion parameter", 1, 200, 50
+        "$\lambda$ mean-reversion parameter", 1, 200, 120
     )  # min, max, default
     sigma_f = st.slider(
-        "$\sigma^F$, vol mean reverting", 0.01, 500.0, 100.0
+        "$\sigma^F$, vol mean reverting", 0.01, 500.0, 2400.0
     )  # min, max, default
     st.write("Noise std dev when perp funding rate is correlated with market sentiment")
     sigma_noise = st.slider(
@@ -545,20 +633,33 @@ df_price_paths = pd.DataFrame(
     price_paths.T, columns=["mc{}".format(i) for i in range(price_paths.shape[0])]
 )
 df_price_paths = df_price_paths.assign(time=time, underlying="spot")
-if select_perp == "Mean-reversion to P":
-    perps_price_paths = get_perps_price_mean_rev(
-        price_paths, dt=dt, kappa=1.0, sigma=sigma, lambda_=lambda_, r=0.005
-    )
-else:
-    perps_price_paths = get_perps_price_realistic(
-        price_paths=price_paths,
-        sigma=sigma_f,
-        sigma_noise=sigma_noise,
-        dt=dt,
-        window_length=5,
-        delta=5,
-        lambda_=lambda_,
-    )
+# perps_price_paths = get_perps_price_realistic(
+#         price_paths=price_paths,
+#         sigma=sigma_f,
+#         sigma_noise=sigma_noise,
+#         dt=dt,
+#         window_length=5,
+#         delta=5,
+#         lambda_=lambda_,
+#     )
+# if select_perp == "Mean-reversion to P":
+r_perp = 0.005
+basis_mean = args.premium if args.premium is not None else r_perp / kappa
+perps_price_paths = get_perps_price_basis_ou(
+    price_paths, dt=dt, lambda_=LAMBDA_B, sigma_b=SIGMA_B,
+    m=basis_mean, b0=r_perp / kappa, seed=seed + 1,
+)
+# else:
+# perps_price_paths = get_perps_price_realistic(
+#     price_paths=price_paths,
+#     sigma=sigma_f,
+#     sigma_noise=sigma_noise,
+#     dt=dt,
+#     window_length=5,
+#     delta=5,
+#     lambda_=lambda_,
+#     seed=seed,
+# )
 # elif select_perp == "Mean-reversion to P":
 #     perps_price_paths = get_perps_price_mean_rev(
 #         price_paths,
@@ -593,6 +694,11 @@ df_price_melted = pd.melt(
     value_name="price",
 )
 _, price_plot_col, _ = st.columns([0.1, 0.8, 0.1])
+
+
+COLOR_MAP = {"spot": "#636EFA",  # plotly blue
+             "perp": "#EF553B"}
+
 with price_plot_col:
     samples = ["mc{}".format(i) for i in range(20)]
     fig_price = px.line(
@@ -600,16 +706,18 @@ with price_plot_col:
         x="time",
         y="price",
         line_group="variable",
-        color="underlying",
+        color="underlying",  # use "variable" here if you want each mc# a different color
+        color_discrete_map=COLOR_MAP,
     )
-    # fig_price.write_image(f"results/price_mu{mu}_sigma{sigma}.png")
+
+    fig_price.write_image(f"results/price_mu{mu}_sigma{sigma}.png", engine="kaleido", scale=2)
     st.plotly_chart(fig_price, use_container_width=True)
 
 st.markdown("""---""")
 st.markdown("Difference of price, $F_t - P_t$, proportional to perps fee rate. ")
 col_seed, col, _ = st.columns([0.1, 0.8, 0.1], gap="medium")
 with col_seed:
-    seed0 = st.slider("seed price sample", 0, n_mc, 0, step=1)
+    seed0 = st.slider("seed price sample", 0, n_mc, 8700, step=1)
 with col:
     # Create figure with secondary y-axis
     fig = make_subplots(specs=[[{"secondary_y": True}]])
@@ -621,7 +729,7 @@ with col:
         go.Scatter(
             x=time,
             y=perps_price_paths[seed0, :] - price_paths[seed0],
-            name="Perps price - spot price",
+            name="F<sub>t</sub> - P<sub>t</sub>",
             fill="tozeroy",
         ),
         secondary_y=True,
@@ -631,9 +739,9 @@ with col:
     fig.update_xaxes(title_text="time")
 
     # Set y-axes titles
-    fig.update_yaxes(title_text="Perps price - spot price", secondary_y=True)
+    fig.update_yaxes(title_text="F<sub>t</sub> - P<sub>t</sub>", secondary_y=True)
     fig.update_yaxes(title_text="ETH-USD price", secondary_y=False)
-
+    fig.write_image(f"results/funding_rate_sentiment_mu{mu}_sigma{sigma}.png", engine="kaleido", scale=2)
     st.plotly_chart(fig, use_container_width=True)
 
 
@@ -676,22 +784,22 @@ with st.expander("Impact of lending on the spot"):
 col1, col2, col3 = st.columns([0.2, 0.2, 0.8], gap="medium")
 with col1:
     st.write("Impact of ETH price on ETH utilisation")
-    alpha_eth = st.slider("$\\alpha^{ETH}$", -1.0, 1.0, -0.15, step=0.01)
-    u0_eth = st.slider("$u_0^{ETH}$", 0.0, 1.0, 0.4, step=0.01)
+    alpha_eth = st.slider("$\\alpha^{ETH}$", -3.0, 3.0, 1.6, step=0.01)
+    u0_eth = st.slider("$u_0^{ETH}$", 0.0, 1.0, 0.88, step=0.01)
     st.write("Random seed")
     seed_ = st.slider("seed", 0, n_mc, 0, step=1)
 with col2:
     st.write("Impact of ETH price on DAI utilisation")
-    alpha_dai = st.slider("$\\alpha^{DAI}$", -1.0, 1.0, 0.05, step=0.01)
-    u0_dai = st.slider("$u_0^{DAI}$", 0.0, 1.0, 0.4, step=0.01)
+    alpha_dai = st.slider("$\\alpha^{DAI}$", -3.0, 3.0, 2.15, step=0.01)
+    u0_dai = st.slider("$u_0^{DAI}$", 0.0, 1.0, 0.81, step=0.01)
 
 u_eth = get_utilisation(price_paths=price_paths, u0=u0_eth, a=alpha_eth)
 u_dai = get_utilisation(price_paths=price_paths, u0=u0_dai, a=alpha_dai)
 r_collateral_eth = vect_irm(
-    u_optimal=u_optimal, r_0=r_0, r_1=r_1, r_2=r_2, utilisation=u_eth, collateral=True
+    **IRM_ETH, utilisation=u_eth, collateral=True
 )
 r_debt_dai = vect_irm(
-    u_optimal=u_optimal, r_0=r_0, r_1=r_1, r_2=r_2, utilisation=u_dai, collateral=False
+    **IRM_DAI, utilisation=u_dai, collateral=False
 )
 # Create figure with secondary y-axis
 _, col, _ = st.columns([0.1, 0.8, 0.1])
@@ -767,10 +875,10 @@ with col2:
     st.plotly_chart(fig)
 
 r_collateral_eth = vect_irm(
-    u_optimal=u_optimal, r_0=r_0, r_1=r_1, r_2=r_2, utilisation=u_eth, collateral=True
+    **IRM_ETH, utilisation=u_eth, collateral=True
 )
 r_debt_dai = vect_irm(
-    u_optimal=u_optimal, r_0=r_0, r_1=r_1, r_2=r_2, utilisation=u_dai, collateral=False
+    **IRM_DAI, utilisation=u_dai, collateral=False
 )
 
 st.markdown("""---""")
@@ -823,11 +931,6 @@ with col2:
 # ------------------------------------
 st.markdown("""---""")
 st.subheader("PnL - funding fee - liquidation times")
-
-col1, _ = st.columns([0.2, 0.8])
-with col1:
-    st.write("Time")
-    t = st.slider(r"$t$", 0.0, 1.0, 0.10)
 
 liquidation_times_lending = get_liquidation_times(
     dt=dt,
@@ -883,16 +986,20 @@ df_pnl_melted = pd.melt(
     value_vars=["mc{}".format(i) for i in range(pnl_lending_position.shape[0])],
     value_name="PnL",
 )
+df_ = df_pnl_melted[df_pnl_melted["time"] == t]
+dct = {'mu':mu, 'sigma':sigma, 'time':t, }
 
 st.markdown("Comparison of PnL at time {}".format(t))
 _, price_col, _ = st.columns([0.1, 0.8, 0.1])
 with price_col:
+    pnl_t = df_pnl_melted[df_pnl_melted["time"] == t]
+    # result = pd.DataFrame(mu,sigma,t,pnl_t.mean(),pnl_t.std())
     fig = px.histogram(
-        df_pnl_melted[df_pnl_melted["time"] == t],
+        pnl_t,
         x="PnL",
         color="derivative",
         opacity=0.5,
-        nbins=60,
+        nbins=200,
         barmode="overlay",
         # range_x=(-400, 200),
     )
@@ -901,17 +1008,31 @@ with price_col:
         lambda x: x.update(name=names[x.name], legendgroup=names[x.name])
     )
     # fig.write_image(f"results/pnl_mu{mu}_sigma{sigma}_thetaF{lt_f}.png")
+    # if "realistic":
+    fig.write_image(f"results/pnl_mu{mu}_sigma{sigma}_thetaF{lt_f}_time{t}.png")
     st.plotly_chart(fig, use_container_width=True)
     table = (
         df_pnl_melted[df_pnl_melted["time"] == t][["derivative", "PnL"]]
         .groupby("derivative")
-        .agg({"PnL": [np.mean, np.std]})
+        .agg({"PnL": [np.mean, np.std, np.median,
+                      lambda x: -np.quantile(x, 0.05),
+                      lambda x: -x[x <= np.quantile(x, 0.05)].mean()]})
         .reset_index()
     )
     table = table.replace(to_replace="cPerp", value="Loan position")
-    table.columns = ["derivative", "mean PnL", "std dev PnL"]
+    table.columns = ["derivative", "mean PnL", "std dev PnL", "median PnL", "VaR 5%", "ES 5%"]
     st.dataframe(table, hide_index=True, use_container_width=True)
-
+    # if realistic:
+    table.to_csv(f'results/pnl_mu{mu}_sigma{sigma}_thetaF{lt_f}_time{t}.csv',
+                 index=False,
+                 mode="a",  # write header only once
+                 float_format="%.6f",
+                 )
+    # table.to_csv(f'results/pnl_mu{mu}_sigma{sigma}_thetaF{lt_f}.csv',
+    #     index=False,
+    #     mode="a",  # write header only once
+    #     float_format="%.6f",
+    # )
     # df_pnl_melted[df_pnl_melted["time"] == t][["derivative", "PnL"]].groupby(
     #     "derivative"
     # ).agg({"PnL": [np.mean, np.std]}).reset_index().to_csv(
@@ -928,10 +1049,10 @@ with price_col:
         pnl_diff_melted[pnl_diff_melted["time"] == t],
         x="diff_pnl",
         opacity=0.5,
-        nbins=60,
+        nbins=200,
         labels={"diff_pnl": "(PnL loan position) - (PnL long perp position)"},
     )
-    # fig.write_image(f"results/diff_pnl_mu{mu}_sigma{sigma}_thetaF{lt_f}.png")
+    fig.write_image(f"results/diff_pnl_mu{mu}_sigma{sigma}_thetaF{lt_f}.png")
     st.plotly_chart(fig, use_container_width=True)
     table = (
         pnl_diff_melted[pnl_diff_melted["time"] == t]["diff_pnl"]
@@ -988,7 +1109,7 @@ with price_col:
         x="funding_fee",
         color="derivative",
         opacity=0.5,
-        nbins=60,
+        nbins=200,
         barmode="overlay",
         # range_x=(-15, 15),
         labels={"cPerp": "Loan position", "funding_fee": "funding fee"},
@@ -997,6 +1118,8 @@ with price_col:
     fig.for_each_trace(
         lambda x: x.update(name=names[x.name], legendgroup=names[x.name])
     )
+    # if realistic:
+    fig.write_image(f"results/funding_fee_mu{mu}_sigma{sigma}_thetaF{lt_f}_time{t}.png")
     # fig.write_image(f"results/funding_fee_mu{mu}_sigma{sigma}_thetaF{lt_f}.png")
     st.plotly_chart(fig, use_container_width=True)
 
@@ -1008,6 +1131,18 @@ with price_col:
     )
     table.columns = ["derivative", "mean funding fee", "std dev funding fee"]
     table = table.replace(to_replace="cPerp", value="Loan position")
+    # table.to_csv(f'results/funding_fee_mu{mu}_sigma{sigma}_thetaF{lt_f}.csv',
+    #              index=False,
+    #              mode="a",
+    #              float_format="%.6f",
+    #              )
+    # st.dataframe(table, hide_index=True, use_container_width=True)
+
+    table.to_csv(f'results/funding_fee_mu{mu}_sigma{sigma}_thetaF{lt_f}_time{t}.csv',
+                 index=False,
+                 mode="a",
+                 float_format="%.6f",
+                 )
     st.dataframe(table, hide_index=True, use_container_width=True)
 
     # df_funding_fee_melted[df_pnl_melted["time"] == t][
@@ -1064,5 +1199,5 @@ with col:
     fig.for_each_trace(
         lambda x: x.update(name=names[x.name], legendgroup=names[x.name])
     )
-    # fig.write_image(f"results/liquidation_times_mu{mu}_sigma{sigma}.png")
+    fig.write_image(f"results/liquidation_times_mu{mu}_sigma{sigma}.png")
     st.plotly_chart(fig, use_container_width=True)
