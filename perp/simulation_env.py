@@ -67,9 +67,9 @@ class SimulationEnv:
         return payoff - self.p0 * (1 - self.ltv0)
 
     def implied_funding_fee(self) -> np.ndarray:
-        return self.price_paths * (
+        return self.p0 * ((
             1 - np.exp(self.r_collateral_eth * self.time_array)
-        ) - self.ltv0 * self.p0 * (1 - np.exp(self.r_debt_dai * self.time_array))
+        ) - self.ltv0 * (1 - np.exp(self.r_debt_dai * self.time_array)))
 
     def perps_price_mean_rev(
         self,

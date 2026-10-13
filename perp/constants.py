@@ -11,14 +11,15 @@ DEBT_TOKEN_PREFIX = "debt-"
 CONTANGO_TOKEN_PREFIX = "c-"
 AAVE_TOKEN_PREFIX = "a-"
 
-
+DAI_PATH = DATA_PATH / "aave_v3_arbitrum_dai_8h_180d.jsonl.gz"
 COINGLASS_PATH = DATA_PATH / "coinglass.jsonl.gz"
-AAVE_V3_PARAM_PATH = DATA_PATH / "reservepara_v3.jsonl.gz"
+AAVE_V3_PARAM_PATH = DATA_PATH / "aave_v3_polygon.jsonl.gz"
 KAIKO_EXCHANGE_PATH = DATA_PATH / "exchange_df.pkl"
 KAIKO_SLIPPAGE_PATH = DATA_PATH / "slippage.jsonl.gz"
 UNISWAP_PATH = DATA_PATH / "uniswap.jsonl.gz"
 TIME_BLOCK_PATH = DATA_PATH / "time_block.json"
 UNISWAP_TIME_SERIES_PATH = DATA_PATH / "uniswap_ts.jsonl.gz"
+OUT_PRICE_PATH = DATA_PATH / "prices.jsonl.gz"
 
 USD_STABLECOIN = "DAI"
 
@@ -30,7 +31,9 @@ SYMBOL_LIST = [
     "UNI",
     "AAVE",
     "CRV",
-    "MKR",
+    # "MKR",
+    # "SOL",
+    # "XRP",
     # "BAL",
     "SNX",
     # "LDO",
@@ -41,19 +44,7 @@ SYMBOL_LIST = [
 
 CONTANGO_NAME = "DeFi Loan"
 
-PRODUCT_LIST = [
-    # "Bitmex",
-    "Binance",
-    "Bybit",
-    "OKX",
-    "Huobi",
-    "Gate",
-    "Bitget",
-    "dYdX",
-    "CoinEx",
-    # "BingX",
-    CONTANGO_NAME,
-]
+PRODUCT_LIST = ['dYdX', 'Bybit', 'Binance', 'OKX', 'Gate.io', CONTANGO_NAME]
 
 KAIKO_EXCHANGES = ["Binance", "Huobi", "OkEX", "CoinEx"]
 

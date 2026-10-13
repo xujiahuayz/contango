@@ -5,6 +5,7 @@ Environment for the DeFi simulation.
 from __future__ import annotations
 
 import logging
+from math import exp
 
 from perp.constants import (
     AAVE_TOKEN_PREFIX,
@@ -131,11 +132,11 @@ class PlfPool:
 
     @property
     def periodic_supplier_multiplier(self) -> float:
-        return (1 + self.supply_apy) ** self.periodic_exponent
+        return exp(self.supply_apy * self.periodic_exponent)
 
     @property
     def periodic_borrow_multiplier(self) -> float:
-        return (1 + self.borrow_apy) ** self.periodic_exponent
+        return exp(self.borrow_apy * self.periodic_exponent)
 
     def accrue_daily_interest(self):
         """
@@ -221,11 +222,11 @@ class cPool:
 
     @property
     def daily_supplier_multiplier(self) -> float:
-        return (1 + self.supply_apy) ** self.periodic_exponent
+        return exp(self.supply_apy * self.periodic_exponent)
 
     @property
     def daily_borrow_multiplier(self) -> float:
-        return (1 + self.borrow_apy) ** self.periodic_exponent
+        return exp(self.borrow_apy * self.periodic_exponent)
 
     def accrue_daily_interest(self):
         """
