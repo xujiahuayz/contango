@@ -1,4 +1,3 @@
-# contango
 
 ## Setup
 
